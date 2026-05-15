@@ -68,16 +68,53 @@ vc.appliance.services.check.timeout.minutes=240
 
 重啟後 `systemctl is-active domainmanager` → `active`(兩台)。
 
+## 後續調整:全部參數 ×10(同日稍晚)
+
+第一批值套用後,nested lab 的 VCF Operations / Automation 透過 Fleet Lifecycle 部署仍會
+撞 timeout(根因見 [layer3-postbringup/vcf-operations-automation-deploy-troubleshooting.md](../layer3-postbringup/vcf-operations-automation-deploy-troubleshooting.md)
+—— nested-on-nested vSAN 把 VSP Supervisor etcd 拖垮)。因此把上表 **6 個參數全部再 ×10**:
+
+| 參數 | 第一批 | ×10 後 |
+|---|---|---|
+| `nsxt.manager.wait.minutes` | `180` | `1800` |
+| `edge.node.vm.creation.max.wait.minutes` | `90` | `900` |
+| `vsp.bootstrap.task.timeout.minutes` | `240` | `2400` |
+| `vsp.bootstrap.command.timeout.minutes` | `200` | `2000` |
+| `nsxt.alb.image.upload.retry.check.interval.seconds` | `90` | `900` |
+| `vc.appliance.services.check.timeout.minutes` | `240` | `2400` |
+
+兩台 `application.properties` ×10 後的最終值:
+
+```properties
+# VCF 9.1 lab timeout workarounds (williamlam.com)
+nsxt.manager.wait.minutes=1800
+edge.node.vm.creation.max.wait.minutes=900
+vsp.bootstrap.task.timeout.minutes=2400
+vsp.bootstrap.command.timeout.minutes=2000
+nsxt.alb.image.upload.retry.check.interval.seconds=900
+vc.appliance.services.check.timeout.minutes=2400
+```
+
+改完同樣 `systemctl restart domainmanager`,兩台 `systemctl is-active domainmanager` → `active`。
+配合此次調整,M02 的 VCF Operations / Automation 部署最終 `COMPLETED_WITH_SUCCESS`。
+
 ## 備份
 
 每次修改前都先 `cp -p` 備份原檔,位於同目錄下:
 
-| 主機 | 第一批(5 參數)備份 | 第二批(vc.appliance...)備份 |
-|---|---|---|
-| VCF Installer 10.0.1.4 | `application.properties.bak-20260514-055017` | `application.properties.bak-20260514-055407` |
-| SDDC Manager 10.0.1.18 | `application.properties.bak-20260514-054923` | `application.properties.bak-20260514-055428` |
+| 主機 | 第一批(5 參數) | 第二批(vc.appliance...) | ×10 調整 |
+|---|---|---|---|
+| VCF Installer 10.0.1.4 | `application.properties.bak-20260514-055017` | `application.properties.bak-20260514-055407` | `application.properties.bak-20260514-091941` |
+| SDDC Manager 10.0.1.18 | `application.properties.bak-20260514-054923` | `application.properties.bak-20260514-055428` | `application.properties.bak-20260514-092107` |
 
 回退方式:`cp -p <備份檔> /etc/vmware/vcf/domainmanager/application.properties` 後重啟 `domainmanager`。
+
+## 參考連結
+
+- William Lam — [VCF 9.1 Comprehensive VCF Installer & SDDC Manager Configuration Workarounds for Lab Deployments](https://williamlam.com/2026/05/vcf-9-1-comprehensive-vcf-installer-sddc-manager-configuration-workarounds-for-lab-deployments.html)
+- Broadcom KB 424770 — VCF Installer 重試失敗的 SDDC bring-up(`GET /v1/sddcs/{id}/spec` → `PATCH /v1/sddcs/{id}`):<https://knowledge.broadcom.com/external/article/424770>
+- 本 lab 實際操作指令(pty + su 取 root 等):[timeout-tuning-operations-log.md](timeout-tuning-operations-log.md)
+- 根因與完整排錯:[../layer3-postbringup/vcf-operations-automation-deploy-troubleshooting.md](../layer3-postbringup/vcf-operations-automation-deploy-troubleshooting.md)
 
 ## 安全性備註
 

@@ -68,6 +68,25 @@ vCenter 回 vmodl.fault.RequestCanceled → installer subtask 失敗
 | 4 | **domainmanager timeout 參數 ×10** | VCF Installer(10.0.1.4)與 SDDC Manager(10.0.1.18)的 `/etc/vmware/vcf/domainmanager/application.properties` 內所有 timeout 參數 **全部 ×10**(見 `layer2-bringup/timeout-tuning.md`),改完 `systemctl restart domainmanager`。給慢速 lab 足夠的 OVA import / 服務啟動緩衝。 |
 | 5 | **VCF Installer UI 按 Retry** | 修復完底層後,**從 VCF Installer UI 手動按 Retry**。注意:domainmanager 重啟後**不會**自動從 Vault 接手續跑,installer retry **必須明確觸發**;UI Retry 會從失敗點續跑、不重做 validation(API 方式則為 `GET /v1/sddcs/{id}/spec` → `PATCH /v1/sddcs/{id}`,但 lab 中 raw PATCH 會撞 `QUICK_START_VALIDATION_FAILED`,IP pool 已被佔用,故走 UI Retry 較穩)。 |
 
+### domainmanager timeout 參數(動作 #4 的具體值)
+
+設定檔:`/etc/vmware/vcf/domainmanager/application.properties`(VCF Installer `10.0.1.4`
+與 SDDC Manager `10.0.1.18` 兩台皆改,擁有者 `vcf_domainmanager:vcf`、權限 `600`),
+改完 `systemctl restart domainmanager`。完整紀錄見
+[../layer2-bringup/timeout-tuning.md](../layer2-bringup/timeout-tuning.md)。
+
+| 參數 | code 預設 | 第一批 | 最終(×10) |
+|---|---|---|---|
+| `nsxt.manager.wait.minutes` | (default) | `180` | `1800` |
+| `edge.node.vm.creation.max.wait.minutes` | (default) | `90` | `900` |
+| `vsp.bootstrap.task.timeout.minutes` | (default) | `240` | `2400` |
+| `vsp.bootstrap.command.timeout.minutes` | (default) | `200` | `2000` |
+| `nsxt.alb.image.upload.retry.check.interval.seconds` | `10` | `90` | `900` |
+| `vc.appliance.services.check.timeout.minutes` | `30` | `240` | `2400` |
+
+> VCF 沒有單一通用的 OVF/OVA 佈署 timeout;各 appliance 的佈署由上表「各元件各自的等待參數」
+> 控制,`vc.appliance.services.check.timeout.minutes` 是最接近「appliance 佈署後等待」者。
+
 ### 修復後驗證
 
 - VSP etcd `wal_fsync` 從 135ms~4s 回到 **5~13ms 健康區間**,控制平面 crashloop 停止。
@@ -206,3 +225,18 @@ lab 各元件登入限制不同,以下是實際打通的方法:
 - **慢速 lab 一定要先調 domainmanager timeout**(見 `layer2-bringup/timeout-tuning.md`),
   否則 OVA import / 服務啟動很容易撞內部 timeout。
 - 監控腳本的 grep 要收斂範圍,domainmanager.log 有單行數十 KB 的 JSON,寬鬆 grep 會炸輸出。
+
+---
+
+## 9. 參考連結
+
+- **William Lam** — [VCF 9.1 Comprehensive VCF Installer & SDDC Manager Configuration Workarounds for Lab Deployments](https://williamlam.com/2026/05/vcf-9-1-comprehensive-vcf-installer-sddc-manager-configuration-workarounds-for-lab-deployments.html)
+  — domainmanager timeout 參數的來源。
+- **Broadcom KB 424770** — VCF Installer 重試失敗的 SDDC bring-up(`GET /v1/sddcs/{id}/spec`
+  → `PATCH /v1/sddcs/{id}`):<https://knowledge.broadcom.com/external/article/424770>
+- [../layer2-bringup/timeout-tuning.md](../layer2-bringup/timeout-tuning.md)
+  — domainmanager timeout 參數調整完整紀錄(含 ×10 後的最終值、備份檔、回退方式)。
+- [../layer2-bringup/timeout-tuning-operations-log.md](../layer2-bringup/timeout-tuning-operations-log.md)
+  — 上述調整的實際操作指令(含 pty + su 取 root 的方法)。
+- [k8s-access-and-checks.md](./k8s-access-and-checks.md)
+  — VSP Supervisor / VCF Automation K8s 的登入方式與檢查指令速查。
