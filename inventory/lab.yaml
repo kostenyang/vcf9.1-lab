@@ -1,0 +1,87 @@
+# =============================================================================
+#  VCF 9 Lab inventory  —  明文, 非敏感資料
+#  密碼 / token 放 inventory/secrets/lab.yaml (sops 加密)
+# =============================================================================
+
+lab:
+  name: vcf-m02
+  domain: lab.com
+
+# -------- 物理 / 基礎服務 (lab 外圍) ---------------------------------------
+infra:
+  # 你的 lab vCenter (跑 nested 的那個外層 vCenter)
+  outer_vcenter:
+    fqdn: labvc.lab.com
+    ip:   10.0.0.101
+    user: administrator@vsphere.local
+
+  # AD + DNS + jumpbox
+  jumpbox:
+    fqdn: dc01.lab.com
+    ip:   10.0.0.200
+    role: [ad, dns, jumpbox]
+
+  # 自動化主機 (這台跑你的所有 script)
+  automation_host:
+    ip:   10.0.0.65
+    user: labops
+
+# -------- VCF Management Domain --------------------------------------------
+vcf:
+  management_domain:
+    name: vcf-m02
+    sddc_manager:
+      fqdn: sddc-mgr.lab.com
+      # ip 由 VCF Installer 賦予
+    inner_vcenter:
+      fqdn: vc-mgmt.lab.com
+    nsx_manager:
+      fqdn: nsx-mgmt.lab.com
+
+# -------- Nested ESXi hosts (4 台 management domain) -----------------------
+# name            = ESXi hostname (不含 -91 後綴)
+# nested_vm_name  = 外層 vCenter (labvc.lab.com) 上看到的 VM 名 (含 -91 後綴)
+hosts:
+  - name: vcf-m02-esx01
+    mgmt_ip: 10.0.1.14
+    fqdn: esx01.lab.com
+    vmotion_ip: 10.0.2.14
+    vsan_ip:    10.0.3.14
+    role: management
+    nested_vm_name: vcf-m02-esx01-91
+
+  - name: vcf-m02-esx02
+    mgmt_ip: 10.0.1.15
+    fqdn: esx02.lab.com
+    vmotion_ip: 10.0.2.15
+    vsan_ip:    10.0.3.15
+    role: management
+    nested_vm_name: vcf-m02-esx02-91
+
+  - name: vcf-m02-esx03
+    mgmt_ip: 10.0.1.16
+    fqdn: esx03.lab.com
+    vmotion_ip: 10.0.2.16
+    vsan_ip:    10.0.3.16
+    role: management
+    nested_vm_name: vcf-m02-esx03-91
+
+  - name: vcf-m02-esx04
+    mgmt_ip: 10.0.1.17
+    fqdn: esx04.lab.com
+    vmotion_ip: 10.0.2.17
+    vsan_ip:    10.0.3.17
+    role: management
+    nested_vm_name: vcf-m02-esx04-91
+
+# -------- 網路 -------------------------------------------------------------
+network:
+  mgmt:    { vlan: 10, cidr: 10.0.1.0/24, gateway: 10.0.1.1 }
+  vmotion: { vlan: 20, cidr: 10.0.2.0/24, gateway: 10.0.2.1 }
+  vsan:    { vlan: 30, cidr: 10.0.3.0/24, gateway: 10.0.3.1 }
+  overlay: { vlan: 40, cidr: 10.0.4.0/24, gateway: 10.0.4.1 }
+
+# -------- ISO / depot 檔位置 (放在 jumpbox / 自動化主機) ------------------
+artifacts:
+  esxi_91_iso:   E:/9.1/VMware-VMvisor-Installer-9.1.0.0.25370933.x86_64.iso
+  esxi_91_depot: E:/9.1/VMware-ESXi-9.1.0.0.25370933-depot.zip

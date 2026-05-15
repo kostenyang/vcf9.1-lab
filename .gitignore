@@ -1,0 +1,38 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+
+# Ansible
+*.retry
+
+# Secrets (解密後的暫存檔)
+inventory/secrets/*.dec.*
+inventory/secrets/*.plain.*
+!inventory/secrets/.gitkeep
+
+# Age 私鑰絕對不能進 git
+keys.txt
+*.age.key
+age-key*
+
+# PowerCLI logs
+batch-*.csv
+*.log
+
+# 編輯器
+.DS_Store
+.vscode/settings.json
+*.swp
+*~
+
+# ISO / depot (大檔不入 git)
+*.iso
+*-depot.zip

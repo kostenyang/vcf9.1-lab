@@ -1,0 +1,151 @@
+{
+  "_comment": "VCF 9.1 Management Domain Bring-up Spec — 由 Generate-BringupSpec.ps1 從 inventory/lab.yaml 填入. 鍵名以 VCF 9.x API 為準, 9.1 若有變動以官方 OpenAPI 為準.",
+
+  "sddcId": "{{ vcf.management_domain.name }}",
+  "workflowType": "VCF",
+  "ceipEnabled": false,
+  "fipsEnabled": false,
+
+  "managementPoolName": "{{ vcf.management_domain.name }}-mgmt-pool",
+  "skipEsxThumbprintValidation": true,
+  "_lab_note_1": "skipEsxThumbprintValidation = true 是 lab workaround, 正式環境設 false",
+
+  "dnsSpec": {
+    "subdomain": "{{ lab.domain }}",
+    "domain":    "{{ lab.domain }}",
+    "nameserver":          "{{ infra.jumpbox.ip }}",
+    "secondaryNameserver": ""
+  },
+
+  "ntpServers": [
+    "{{ infra.jumpbox.ip }}"
+  ],
+
+  "rootUserCredentials": {
+    "username": "root",
+    "password": "{{ secrets.deploy_defaults.vm_root_pw }}"
+  },
+
+  "sddcManagerSpec": {
+    "hostname":     "{{ vcf.management_domain.sddc_manager.fqdn | splitDot 0 }}",
+    "ipAddress":    "{{ vcf.management_domain.sddc_manager.ip   | default '10.0.1.10' }}",
+    "rootUserCredentials":      { "username": "root",       "password": "{{ secrets.sddc_manager.root_pw }}" },
+    "secondUserCredentials":    { "username": "vcf",        "password": "{{ secrets.sddc_manager.admin_pw }}" },
+    "localUserPassword": "{{ secrets.sddc_manager.admin_pw }}"
+  },
+
+  "vcenterSpec": {
+    "vcenterHostname": "{{ vcf.management_domain.inner_vcenter.fqdn | splitDot 0 }}",
+    "vcenterIp":       "{{ vcf.management_domain.inner_vcenter.ip  | default '10.0.1.11' }}",
+    "ssoDomain":       "vsphere.local",
+    "rootVcenterPassword":   "{{ secrets.inner_vcenter.sso_admin_pw }}",
+    "vmSize":   "small",
+    "storageSize": "lstorage"
+  },
+
+  "psoSpec": {
+    "_lab_note_2": "VCF 9 取消獨立 PSC, embedded 在 vCenter 內, 留 stub 結構以防 9.1 schema 仍要求"
+  },
+
+  "nsxtSpec": {
+    "nsxtManagerSize":  "small",
+    "nsxtManagers": [
+      {
+        "hostname":  "{{ vcf.management_domain.nsx_manager.fqdn | splitDot 0 }}",
+        "ip":        "{{ vcf.management_domain.nsx_manager.ip   | default '10.0.1.12' }}"
+      }
+    ],
+    "rootNsxtManagerPassword":   "{{ secrets.nsx.admin_pw }}",
+    "nsxtAdminPassword":         "{{ secrets.nsx.admin_pw }}",
+    "nsxtAuditPassword":         "{{ secrets.nsx.admin_pw }}",
+    "vip":     "{{ vcf.management_domain.nsx_manager.vip | default '10.0.1.13' }}",
+    "vipFqdn": "{{ vcf.management_domain.nsx_manager.fqdn }}",
+    "transportVlanId": "{{ network.overlay.vlan | default 40 }}"
+  },
+
+  "vsanSpec": {
+    "vsanName":  "vsanDatastore",
+    "licenseFile": "",
+    "esaConfig": {
+      "enabled": true,
+      "_lab_note_3": "vSAN ESA. 若硬體不在 HCL, 必須加上 lab workaround (見 README)."
+    }
+  },
+
+  "dvsSpecs": [
+    {
+      "dvsName":  "SDDC-Dswitch-Private",
+      "vmnics":   ["vmnic0", "vmnic1"],
+      "mtu":      9000,
+      "networks": ["MANAGEMENT", "VSAN", "VMOTION"],
+      "niocSpecs": [
+        { "trafficType": "VSAN",         "value": "HIGH"   },
+        { "trafficType": "VMOTION",      "value": "LOW"    },
+        { "trafficType": "VDP",          "value": "LOW"    },
+        { "trafficType": "VIRTUALMACHINE","value": "HIGH"  },
+        { "trafficType": "MANAGEMENT",   "value": "NORMAL" },
+        { "trafficType": "NFS",          "value": "LOW"    },
+        { "trafficType": "HBR",          "value": "LOW"    },
+        { "trafficType": "FAULTTOLERANCE","value": "LOW"   },
+        { "trafficType": "ISCSI",        "value": "LOW"    }
+      ]
+    }
+  ],
+
+  "networkSpecs": [
+    { "networkType": "MANAGEMENT", "subnet": "{{ network.mgmt.cidr }}",   "vlanId": "{{ network.mgmt.vlan }}",   "mtu": "1500", "gateway": "{{ network.mgmt.gateway }}",   "portGroupKey": "SDDC-DPortGroup-Mgmt" },
+    { "networkType": "VSAN",       "subnet": "{{ network.vsan.cidr }}",   "vlanId": "{{ network.vsan.vlan }}",   "mtu": "9000", "gateway": "{{ network.vsan.gateway }}",   "portGroupKey": "SDDC-DPortGroup-VSAN" },
+    { "networkType": "VMOTION",    "subnet": "{{ network.vmotion.cidr }}","vlanId": "{{ network.vmotion.vlan }}","mtu": "9000", "gateway": "{{ network.vmotion.gateway }}","portGroupKey": "SDDC-DPortGroup-Vmotion" }
+  ],
+
+  "clusterSpec": {
+    "clusterName":     "{{ vcf.management_domain.name }}-cl01",
+    "clusterEvcMode":  "",
+    "vmFolders": {
+      "MANAGEMENT": "{{ vcf.management_domain.name }}-fd-mgmt",
+      "NETWORKING": "{{ vcf.management_domain.name }}-fd-nsx",
+      "EDGENODES":  "{{ vcf.management_domain.name }}-fd-edge"
+    },
+    "personalitySpec": {
+      "_lab_note_4": "Personality / vLCM image. 留空使用 default cluster image"
+    }
+  },
+
+  "hostSpecs": [
+    {
+      "association": "{{ vcf.management_domain.name }}-dc",
+      "ipAddressPrivate": { "ipAddress": "{{ hosts[0].mgmt_ip }}",  "cidr": "{{ network.mgmt.cidr }}", "gateway": "{{ network.mgmt.gateway }}" },
+      "hostname":    "{{ hosts[0].fqdn | splitDot 0 }}",
+      "credentials": { "username": "root", "password": "{{ secrets.esxi.root_pw }}" }
+    },
+    {
+      "association": "{{ vcf.management_domain.name }}-dc",
+      "ipAddressPrivate": { "ipAddress": "{{ hosts[1].mgmt_ip }}",  "cidr": "{{ network.mgmt.cidr }}", "gateway": "{{ network.mgmt.gateway }}" },
+      "hostname":    "{{ hosts[1].fqdn | splitDot 0 }}",
+      "credentials": { "username": "root", "password": "{{ secrets.esxi.root_pw }}" }
+    },
+    {
+      "association": "{{ vcf.management_domain.name }}-dc",
+      "ipAddressPrivate": { "ipAddress": "{{ hosts[2].mgmt_ip }}",  "cidr": "{{ network.mgmt.cidr }}", "gateway": "{{ network.mgmt.gateway }}" },
+      "hostname":    "{{ hosts[2].fqdn | splitDot 0 }}",
+      "credentials": { "username": "root", "password": "{{ secrets.esxi.root_pw }}" }
+    },
+    {
+      "association": "{{ vcf.management_domain.name }}-dc",
+      "ipAddressPrivate": { "ipAddress": "{{ hosts[3].mgmt_ip }}",  "cidr": "{{ network.mgmt.cidr }}", "gateway": "{{ network.mgmt.gateway }}" },
+      "hostname":    "{{ hosts[3].fqdn | splitDot 0 }}",
+      "credentials": { "username": "root", "password": "{{ secrets.esxi.root_pw }}" }
+    }
+  ],
+
+  "_lab_workarounds": {
+    "comment": "下列由 Generate-BringupSpec.ps1 在 -LabMode 開啟時注入到對應節點",
+    "candidates": [
+      "bypassVsanEsaHcl",
+      "skipNestedCpuCheck",
+      "skipNicCountCheck",
+      "skipMinHostCheck",
+      "allowUnsupportedSslThumbprint"
+    ]
+  }
+}
