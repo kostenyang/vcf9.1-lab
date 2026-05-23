@@ -46,6 +46,10 @@ pwsh ./New-VcfLab.ps1 -VcfInstaller https://<vcf-installer-ip-or-fqdn>
 - [timeout-tuning.md](timeout-tuning.md) — 調整的參數、受影響主機、備份與回退
 - [timeout-tuning-operations-log.md](timeout-tuning-operations-log.md) — 實際操作指令(含取得 root 的 pty + su 方法)
 
+## 9.1 設計參考
+
+- [vcfms-ip-allocation.md](vcfms-ip-allocation.md) — VCF 9.1 起 VCFMS 的 IP 配置三種模式(`startIpAddress`/`endIpAddress`、`cidr`、explicit `addresses` 列表)+ `excludeAddresses` 用法,含 Installer JSON 與 SDDC Manager API 兩個入口
+
 ## 待補
 
 - [ ] VCF 9.1 OpenAPI 對齊欄位名（nsxtSpec? nsxSpec?），跑 `-ValidateOnly` 看 error 對齊
