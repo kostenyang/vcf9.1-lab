@@ -14,6 +14,7 @@
 | `ESXi91-ISO-Upgrade-Steps.md` | ISO 開機升級 console 操作步驟 + lab workaround |
 | `Troubleshoot-VsanPartition.md` | vSAN cluster partition 完整除錯流程（unicast peer list 空） |
 | `Safe-Shutdown-VCF-Services-Runtime.md` | 計畫性關機 VCF Services Runtime Cluster(Fleet + Instance)的官方腳本流程,含 dry-run / skip-poweroff / 完整關機三模式 |
+| `Shutdown-Lab.md` | **整個 lab 完整關機 / 開機 SOP** —— 10 個 phase 順序、依賴關係、本 lab(M02 + 外層)逐台動作 |
 
 ## 跑法
 

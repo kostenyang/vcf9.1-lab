@@ -57,6 +57,7 @@
 | **domainmanager timeout 調整** | [layer2-bringup/timeout-tuning.md](./layer2-bringup/timeout-tuning.md) | 慢速 lab 的 Installer / SDDC Manager timeout 參數(含 ×10 最終值、備份、回退) |
 | **9.1 VCFMS IP 配置(設計參考)** | [layer2-bringup/vcfms-ip-allocation.md](./layer2-bringup/vcfms-ip-allocation.md) | 9.1 起 VCFMS 三種 IP 配置模式(IP Range / CIDR / explicit list)+ `excludeAddresses`;VCF Installer JSON 與 SDDC Manager `/vcf-management-components` API 兩種入口 |
 | **安全關機 VCF Services Runtime** | [layer4-day2/Safe-Shutdown-VCF-Services-Runtime.md](./layer4-day2/Safe-Shutdown-VCF-Services-Runtime.md) | 計畫性停機(維運/斷電/冷備份/退役)時的官方腳本流程(KB 440874),三種模式 dry-run / skip-poweroff / 完整關機 |
+| **整 lab 關機 / 開機 SOP** | [layer4-day2/Shutdown-Lab.md](./layer4-day2/Shutdown-Lab.md) | 10 phase 順序:tenant → VCFMS → VCF Ops/Fleet → NSX → SDDC Mgr → Installer → M02 vCenter → nested ESXi →(選)外層 →(務必最後)DNS/跳板;含開機反序、緊急中止 |
 
 ## Quick start
 
