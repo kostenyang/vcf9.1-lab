@@ -13,6 +13,7 @@
 | `Apply-NestedVsanWorkarounds.ps1` | 套用 6 個 vSAN/LSOM lab workaround advanced settings |
 | `ESXi91-ISO-Upgrade-Steps.md` | ISO 開機升級 console 操作步驟 + lab workaround |
 | `Troubleshoot-VsanPartition.md` | vSAN cluster partition 完整除錯流程（unicast peer list 空） |
+| `Safe-Shutdown-VCF-Services-Runtime.md` | 計畫性關機 VCF Services Runtime Cluster(Fleet + Instance)的官方腳本流程,含 dry-run / skip-poweroff / 完整關機三模式 |
 
 ## 跑法
 
