@@ -6,8 +6,18 @@
 
 | 檔案 | 用途 | 時機 |
 |---|---|---|
+| `Set-DnsRecords.ps1` | 從 inventory 自動建/驗證所有 A + PTR 記錄(idempotent),整合自 vcf9-lab-automation 的 add-dns + check-dns | **最先**(部署前,跑在 DNS server 10.0.0.200) |
 | `Deploy-NestedESXi-And-Installer.ps1` | 從 OVA 部署 4 台 nested ESXi(10.0.1.14–17)+ VCF Installer(10.0.1.4)到外層 vCenter,並產出 bring-up JSON 範本 | 零起點 |
 | `Prepare-NestedESXi.ps1` | 套用 6 個 vSAN/LSOM nested lab advanced settings | ESXi 開機後、VCF Installer 前 |
+
+> **環境**: domain `home.lab`、mgmt `10.0.0.0/23`(對齊實機 DNS 10.0.0.200,非舊版 lab.com)。
+
+### Set-DnsRecords 跑法
+```powershell
+pwsh ./Set-DnsRecords.ps1            # 建/補齊 (idempotent: 已對的 skip, 漂移的 update, 缺的 add)
+pwsh ./Set-DnsRecords.ps1 -Verify    # 只驗證 forward A / reverse PTR / 重複 IP
+pwsh ./Set-DnsRecords.ps1 -WhatIf    # 試跑, 不改 DNS
+```
 
 ## 跑法
 

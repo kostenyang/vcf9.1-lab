@@ -13,10 +13,12 @@ crash.log
 # Ansible
 *.retry
 
-# Secrets (解密後的暫存檔)
+# Secrets — 改明文後, 真正的 lab.yaml 絕不可 commit (原 sops 設計才 commit 加密版)
+inventory/secrets/lab.yaml
 inventory/secrets/*.dec.*
 inventory/secrets/*.plain.*
 !inventory/secrets/.gitkeep
+!inventory/secrets/lab.example.yaml
 
 # Age 私鑰絕對不能進 git
 keys.txt

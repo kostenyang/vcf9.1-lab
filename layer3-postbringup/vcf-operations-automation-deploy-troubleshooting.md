@@ -228,6 +228,65 @@ lab 各元件登入限制不同,以下是實際打通的方法:
 
 ---
 
+## 8b. 補記 — VCF Automation(consumption VSP)卡關復現與正解(2026-06-10)
+
+> 第二次重跑(sddcId `9a28f4c0-…`)卡在最後一步 `Install Service Using Fleet lifecycle`(done 313/319)。
+> 與 §1–§7 同根因(nested vSAN 慢 → etcd 拖垮),但這次把 VCFA 的編排鏈與正解徹底釐清。最終
+> `COMPLETED_WITH_SUCCESS`、318/318、VCFA `vcf-m02-auto-vip.home.lab`(10.0.0.170)可登入、prelude 72/72 pod ready。
+
+### VCFA 部署的編排鏈(誰呼叫誰)
+```
+VCF Installer(10.0.1.4 domainmanager,FleetLcmService 每分鐘 poll)
+  └─ FBS = Fleet Build Service(= vcf-fleet-lcm,跑在 management VSP Supervisor)
+       └─ INSTALL_COMPONENTS_WORKFLOW(Netflix Conductor 引擎,task 如 019eab89)
+            └─ 呼叫 SDDC LCM / SDDC Manager domainmanager → `vmsp bootstrap cluster deploy`
+                 └─ 部署「第二個 consumption VSP」(auto-platform,pool 10.0.0.241-249,節點 96GB)
+                      └─ VCFA app 裝在其上(prelude namespace ~72 微服務 + vcd-migrator)
+```
+- consumption VSP 是**獨立的第二個 Supervisor**(非 management VSP 的 CAPI cluster)。其控制平面節點
+  `vcf-m02-auto-platform-*` 自帶 `/etc/kubernetes/admin.conf`、自己的 etcd(`vmsp-etcd-0`)。
+- VCFA UI/API VIP = `vcf-m02-auto-vip.home.lab`(10.0.0.170);platform VIP = `…auto-platform`(10.0.0.171)。
+
+### 正解(與 §4 相同,再次驗證:**FTT=0 是根本解,別跳過**)
+1. nested vSAN storage policy(本 lab = `m01-cl01 vSAN Storage Policy`)改 **FTT=0**,reapply 到 VSP 節點。
+   - PowerCLI:`Set-SpbmStoragePolicy` 重建 ruleset(`VSAN.hostFailuresToTolerate=0`)→
+     `Get-SpbmEntityConfiguration <vm> | Set-SpbmEntityConfiguration -StoragePolicy <pol>`。
+   - 實測 etcd `wal_fsync` 從 135ms~4s(crashloop,kube-apiserver 重啟 88 次)→ **4.2ms**(0 restart)。
+2. domainmanager timeout(installer + SDDC Manager 兩台)×10。
+3. 觸發 retry(見下「自癒」)。
+
+### Conductor workflow 自癒(免手動 retry / 免 DB surgery)
+- FBS 的 INSTALL_COMPONENTS_WORKFLOW 有 **6h(21600s)workflow timeout**。撞到後 Conductor
+  **自動 `Retried task from failed stage`**、開全新安裝任務(如 019eb09e)。**只要此時底層已修好
+  (FTT=0 → etcd 健康),這個全新任務一次就成功**:bootstrap VM 穩住 → 建 consumption VSP 節點 →
+  其 etcd/kube-vip 0 restart → 裝 VCFA app → done 跳 318 → `COMPLETED_WITH_SUCCESS`。
+- 想立即觸發 repair 可:`kubectl delete pod -n vcf-fleet-lcm <vcf-fleet-build-service-…>`
+  (FBS 重啟會對 in-flight workflow 跑 `Invoked workflow repair`)。
+
+### ⚠️ 我繞的遠路(別重蹈)
+- **不要為了「保護 fleet」跳過 FTT=0**。它是 etcd 慢的根本解,FTT1→0 是刪 mirror(輕、且降寫入放大),
+  實體 vSAN 不動。跳過它去做下列動作全是白工、還會製造新問題:
+  - 重啟 SDDC Manager domainmanager → 把 in-flight bootstrap task 變「In Progress 殭屍」(executor 死、
+    永不 timeout、`isCancellable=False`、`TA_TASK_CAN_NOT_BE_RETRIED`),導致 bring-up 卡 IN_PROGRESS 連
+    PATCH retry 都被擋(`BRINGUP_PATCH_NOT_ALLOWED_EXECUTION_IN_PROGRESS`)。
+  - ovftool 預 stage template → 會被下一輪 retry/reconcile 清掉,且 vmsp 仍走自己的 import。
+  - 多個並行 vmsp retry(間隔 ~10s < import 2min)→ 撞名 `name 'vcf-services-runtime-template…' already exists` 風暴。
+    根治不是序列化/預 stage,而是 FTT=0 讓單一 attempt 快速完成。
+
+### Supervisor 控制平面存取速查(本次實證)
+- **management VSP 控制平面節點 = 10.0.0.222**(只有它有 `/etc/kubernetes/admin.conf`);
+  **consumption VSP 控制平面 = 10.0.0.243**(auto-platform 節點)。
+- SSH `vmware-system-user` / `VMware1!VMware1!`(plink;Photon KEX 對 Posh-SSH 不相容)。
+- 非互動 sudo:`echo '<pw>' | sudo -S kubectl --kubeconfig=/etc/kubernetes/admin.conf <…>`。
+- etcd 健康度(在控制平面節點):
+  `crictl ps --name etcd -q` → `crictl exec <id> etcdctl … endpoint health`;
+  fsync 取樣:`curl -s http://127.0.0.1:2381/metrics | grep etcd_disk_wal_fsync_duration_seconds_(sum|count)`,
+  取兩次算 Δsum/Δcount(健康 <10ms)。
+- 取 Supervisor root(密碼會輪替):vCenter(10.0.1.19)`shell /usr/lib/vmware-wcp/decryptK8Pwd.py`
+  (VCSA SSH 連錯密碼會觸發 faillock 鎖 ~15 分鐘,別亂試)。
+
+---
+
 ## 9. 參考連結
 
 - **William Lam** — [VCF 9.1 Comprehensive VCF Installer & SDDC Manager Configuration Workarounds for Lab Deployments](https://williamlam.com/2026/05/vcf-9-1-comprehensive-vcf-installer-sddc-manager-configuration-workarounds-for-lab-deployments.html)

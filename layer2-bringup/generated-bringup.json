@@ -1,0 +1,219 @@
+{
+  "version": "9.1.0.0",
+  "vcfInstanceName": "vcf-m02",
+  "sddcId": "m01",
+  "ceipEnabled": false,
+  "workflowType": "VCF",
+  "skipEsxThumbprintValidation": true,
+  "skipGatewayPingValidation": true,
+  "dnsSpec": {
+    "subdomain": "home.lab",
+    "nameservers": ["10.0.0.200"]
+  },
+  "ntpServers": ["10.0.1.254"],
+  "sddcManagerSpec": {
+    "hostname": "vcf-m02-sddcm01.home.lab",
+    "useExistingDeployment": false,
+    "rootPassword": "VMware1!VMware1!",
+    "sshPassword": "VMware1!VMware1!",
+    "localUserPassword": "VMware1!VMware1!"
+  },
+  "vcenterSpec": {
+    "vcenterHostname": "vcf-m02-vc01.home.lab",
+    "vmSize": "small",
+    "storageSize": "lstorage",
+    "ssoDomain": "vsphere.local",
+    "useExistingDeployment": false,
+    "rootVcenterPassword": "VMware1!VMware1!",
+    "adminUserSsoUsername": "administrator@vsphere.local",
+    "adminUserSsoPassword": "VMware1!VMware1!"
+  },
+  "nsxtSpec": {
+    "vipFqdn": "vcf-m02-nsx01.home.lab",
+    "nsxtManagers": [
+      { "hostname": "vcf-m02-nsx01a.home.lab" }
+    ],
+    "nsxtManagerSize": "medium",
+    "useExistingDeployment": false,
+    "rootNsxtManagerPassword": "VMware1!VMware1!",
+    "nsxtAdminPassword": "VMware1!VMware1!",
+    "nsxtAuditPassword": "VMware1!VMware1!",
+    "transportVlanId": "9",
+    "ipAddressPoolSpec": {
+      "name": "m01-cl01-tep01",
+      "description": "m01-cl01-tep01 descr",
+      "subnets": [
+        {
+          "cidr": "192.168.19.0/24",
+          "gateway": "192.168.19.254",
+          "ipAddressPoolRanges": [
+            { "start": "192.168.19.50", "end": "192.168.19.60" }
+          ]
+        }
+      ]
+    },
+    "vpcSpec": {
+      "dtgwSpec": {
+        "vlan": "0",
+        "gatewayCidr": "10.0.0.1/23",
+        "externalIpBlockCidr": "10.0.0.0/23",
+        "privateTgwIpBlockCidr": "172.31.0.0/16"
+      }
+    }
+  },
+  "datastoreSpec": {
+    "vsanSpec": {
+      "datastoreName": "m01-cl01-ds-vsan01",
+      "vsanDedup": false,
+      "failuresToTolerate": 1,
+      "esaConfig": { "enabled": false },
+      "encryptionConfig": { "dataInTransitConfig": { "enable": false } }
+    }
+  },
+  "dvsSpecs": [
+    {
+      "dvsName": "m01-cl01-vds01",
+      "mtu": 9000,
+      "networks": ["MANAGEMENT", "VMOTION", "VSAN"],
+      "vmnicsToUplinks": [
+        { "id": "vmnic0", "uplink": "uplink1" },
+        { "id": "vmnic1", "uplink": "uplink2" }
+      ],
+      "nsxTeamings": [
+        {
+          "policy": "LOADBALANCE_SRCID",
+          "activeUplinks": ["uplink1", "uplink2"],
+          "standByUplinks": []
+        }
+      ],
+      "nsxtSwitchConfig": {
+        "transportZones": [
+          { "name": "overlay-tz-mgmt-nsxt", "transportType": "OVERLAY" }
+        ]
+      },
+      "lagSpecs": null
+    }
+  ],
+  "networkSpecs": [
+    {
+      "networkType": "MANAGEMENT",
+      "ipAddressVersion": "IPv4",
+      "subnet": "10.0.0.0/23",
+      "gateway": "10.0.0.1",
+      "vlanId": "0",
+      "portGroupKey": "m01-cl01-vds01-pg-esx-mgmt",
+      "teamingPolicy": "loadbalance_loadbased",
+      "activeUplinks": ["uplink1", "uplink2"],
+      "standbyUplinks": []
+    },
+    {
+      "networkType": "VMOTION",
+      "ipAddressVersion": "IPv4",
+      "subnet": "192.168.13.0/24",
+      "gateway": "192.168.13.254",
+      "vlanId": "3",
+      "mtu": 9000,
+      "includeIpAddressRanges": [
+        { "startIpAddress": "192.168.13.5", "endIpAddress": "192.168.13.9" }
+      ],
+      "portGroupKey": "m01-cl01-vds01-pg-vmotion",
+      "teamingPolicy": "loadbalance_loadbased",
+      "activeUplinks": ["uplink1", "uplink2"],
+      "standbyUplinks": []
+    },
+    {
+      "networkType": "VSAN",
+      "ipAddressVersion": "IPv4",
+      "subnet": "192.168.14.0/24",
+      "gateway": "192.168.14.254",
+      "vlanId": "4",
+      "mtu": 9000,
+      "includeIpAddressRanges": [
+        { "startIpAddress": "192.168.14.1", "endIpAddress": "192.168.14.4" }
+      ],
+      "portGroupKey": "m01-cl01-vds01-pg-vsan",
+      "teamingPolicy": "loadbalance_loadbased",
+      "activeUplinks": ["uplink1", "uplink2"],
+      "standbyUplinks": []
+    }
+  ],
+  "clusterSpec": {
+    "datacenterName": "m01-dc01",
+    "clusterName": "m01-cl01"
+  },
+  "vspClusterSpec": {
+    "name": "m01-vmsp-01",
+    "instanceFqdn": "vcf-m02-shared01.home.lab",
+    "platformFqdn": "vcf-m02-vsp01.home.lab",
+    "fleetFqdn": "vcf-m02-fleet01.home.lab",
+    "systemUserPassword": "VMware1!VMware1!",
+    "size": "small",
+    "internalClusterCidrIpv4": "198.18.0.0/15",
+    "ipv4Pool": {
+      "ipRange": {
+        "startIpAddress": "10.0.0.226",
+        "endIpAddress": "10.0.0.240"
+      }
+    }
+  },
+  "vcfAutomationSpec": {
+    "hostname": "vcf-m02-auto-vip.home.lab",
+    "platformFqdn": "vcf-m02-auto-platform.home.lab",
+    "adminUserPassword": "VMware1!VMware1!",
+    "nodePrefix": "m01-node-01",
+    "internalClusterCidr": "198.18.0.0/15",
+    "size": "small",
+    "useExistingDeployment": false,
+    "ipPool": [
+      "10.0.0.241", "10.0.0.242", "10.0.0.243", "10.0.0.244", "10.0.0.245",
+      "10.0.0.246", "10.0.0.247", "10.0.0.248", "10.0.0.249"
+    ]
+  },
+  "vcfOperationsSpec": {
+    "applianceSize": "small",
+    "useExistingDeployment": false,
+    "adminUserPassword": "VMware1!VMware1!",
+    "nodes": [
+      {
+        "hostname": "vcf-m02-ops01.home.lab",
+        "type": "master",
+        "rootUserPassword": "VMware1!VMware1!"
+      }
+    ]
+  },
+  "vcfOperationsCollectorSpec": {
+    "hostname": "vcf-m02-opsc01.home.lab",
+    "applianceSize": "small",
+    "useExistingDeployment": false,
+    "rootUserPassword": "VMware1!VMware1!"
+  },
+  "licenseServerSpec": {
+    "hostname": "vcf-m02-license.home.lab"
+  },
+  "vidbSpec": {
+    "hostname": "vcf-m02-vidb.home.lab"
+  },
+  "saltSpec": {},
+  "saltRaasSpec": {},
+  "telemetryAcceptorSpec": {},
+  "fleetLcmSpec": {
+    "hostname": "vcf-m02-fleet01.home.lab"
+  },
+  "sddcLcmSpec": {
+    "hostname": "vcf-m02-shared01.home.lab"
+  },
+  "fleetDepotSpec": {},
+  "hostSpecs": [
+    { "hostname": "vcf-m02-esx01.home.lab", "credentials": { "username": "root", "password": "VMware1!VMware1!" } },
+    { "hostname": "vcf-m02-esx02.home.lab", "credentials": { "username": "root", "password": "VMware1!VMware1!" } },
+    { "hostname": "vcf-m02-esx03.home.lab", "credentials": { "username": "root", "password": "VMware1!VMware1!" } },
+    { "hostname": "vcf-m02-esx04.home.lab", "credentials": { "username": "root", "password": "VMware1!VMware1!" } }
+  ],
+  "skipChecks": [
+    "NESTED_CPU_CHECK",
+    "NIC_COUNT_CHECK",
+    "MIN_HOST_CHECK",
+    "VSAN_ESA_HCL_CHECK",
+    "ESX_THUMBPRINT_CHECK"
+  ]
+}

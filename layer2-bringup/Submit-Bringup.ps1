@@ -45,18 +45,7 @@ $ErrorActionPreference = 'Stop'
 if (-not (Test-Path $SpecFile)) { throw "Spec 檔不存在: $SpecFile" }
 $specJson = Get-Content -Raw $SpecFile
 
-# Self-signed cert
-if (-not ('TrustAllCertsPolicy' -as [type])) {
-    Add-Type -TypeDefinition @'
-    using System.Net;
-    using System.Security.Cryptography.X509Certificates;
-    public class TrustAllCertsPolicy : ICertificatePolicy {
-        public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; }
-    }
-'@
-}
-[System.Net.ServicePointManager]::CertificatePolicy = [TrustAllCertsPolicy]::new()
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# Self-signed cert: pwsh 7 用每個呼叫的 -SkipCertificateCheck 處理 (不需 .NET Framework 的 ICertificatePolicy)
 
 $base = $VcfInstaller.TrimEnd('/')
 

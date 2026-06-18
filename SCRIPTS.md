@@ -25,6 +25,8 @@
 
 | 檔案 | 功能 | 跑法 |
 |---|---|---|
+| `Set-DnsRecords.ps1` | 從 inventory 建/驗證所有 A+PTR (idempotent, inventory-driven). 整合自 vcf9-lab-automation add-dns/check-dns. 在 DNS server (10.0.0.200) 跑 | `pwsh Set-DnsRecords.ps1 [-Verify] [-WhatIf]` |
+| `Deploy-NestedESXi-And-Installer.ps1` | 從 OVA 部署 4 台 nested ESXi + VCF Installer 到外層 vCenter, 產 bring-up JSON. 密碼從 secrets/lab.yaml (sops 或明文) | `pwsh Deploy-NestedESXi-And-Installer.ps1` |
 | `Prepare-NestedESXi.ps1` | 對 nested ESXi 套用 6 個 vSAN/LSOM lab advanced settings (idempotent). `-DryRun` 只看不改,`-Hosts` 指定特定 host | `pwsh Prepare-NestedESXi.ps1 [-DryRun] [-Hosts 10.0.1.14,...]` |
 
 ### Prepare-NestedESXi 套用的 6 個 setting

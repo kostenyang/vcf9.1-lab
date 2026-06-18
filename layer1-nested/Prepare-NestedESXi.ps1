@@ -36,6 +36,7 @@
 param(
     [string[]] $Hosts = @('10.0.1.14','10.0.1.15','10.0.1.16','10.0.1.17'),
     [string]   $User  = 'root',
+    [string]   $Password,          # 非互動: 給了就不跳 Get-Credential
     [switch]   $DryRun
 )
 
@@ -73,8 +74,12 @@ function Ensure-PowerCLI {
 
 Ensure-PowerCLI
 
-# One credential prompt, shared across all hosts
-$cred = Get-Credential -UserName $User -Message "ESXi root password (shared across all hosts)"
+# One credential, shared across all hosts (非互動 -Password 優先, 否則跳 prompt)
+if ($Password) {
+    $cred = New-Object System.Management.Automation.PSCredential($User, (ConvertTo-SecureString $Password -AsPlainText -Force))
+} else {
+    $cred = Get-Credential -UserName $User -Message "ESXi root password (shared across all hosts)"
+}
 
 $rows = New-Object System.Collections.Generic.List[object]
 

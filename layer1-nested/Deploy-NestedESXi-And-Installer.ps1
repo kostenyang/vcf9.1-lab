@@ -36,11 +36,15 @@ function Initialize-LabSecrets {
         $script:_labSecrets = @{}
         return
     }
-    $yaml = & sops -d $secretsFile 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "sops decrypt failed: $yaml`n(請確認 sops + age + ~/.config/sops/age/keys.txt 都裝好)"
-        $script:_labSecrets = @{}
-        return
+    # 有 sops 就用 sops 解; 沒 sops (這台 Windows jumpbox) 就直接讀明文.
+    if (Get-Command sops -ErrorAction SilentlyContinue) {
+        $yaml = & sops -d $secretsFile 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "sops decrypt failed: $yaml`n(改讀明文 fallback)"
+            $yaml = Get-Content -Raw -LiteralPath $secretsFile
+        }
+    } else {
+        $yaml = Get-Content -Raw -LiteralPath $secretsFile
     }
     # 簡易 2 層 YAML parser (section: key: value),足以解析本 repo 的 lab.yaml
     $h = @{}
@@ -209,11 +213,11 @@ $random_string  = -join ((65..90) + (97..122) | Get-Random -Count 8 | ForEach-Ob
 $VAppName       = "Nested-VCF9-M02-$random_string"
 
 $preCheck            = 1
-$confirmDeployment   = 1
+$confirmDeployment   = 0   # 非互動 (rebuild 自動化, 跳過 Read-Host)
 $deployNestedESXiVMs = 1
-$deployVCFInstaller  = 1
+$deployVCFInstaller  = 0   # 重用既有 vcf-m01-cb01 (10.0.1.4) 當 installer, 不部新的
 $moveVMsIntovApp     = 1
-$generateJson        = 1
+$generateJson        = 0   # 9.1 改用 layer2 的 spec, 不產這支的 9.0 JSON
 
 $StartTime = Get-Date
 
@@ -390,9 +394,10 @@ if($deployNestedESXiVMs -eq 1) {
         $ovfconfig.common.guestinfo.syslog.value           = $VMSyslog
         $ovfconfig.common.guestinfo.password.value         = $VMPassword
         $ovfconfig.common.guestinfo.ssh.value              = $true
+        # mgmt 維持 untagged (照 5/13 spec vlanId 0; 連通靠 Trunk-Nobinding native + promiscuous toggle)
 
         My-Logger "Deploying Nested ESXi VM $VMName ..."
-        $vm = Import-VApp -Source $NestedESXiApplianceOVA -OvfConfiguration $ovfconfig -Name $VMName -Location $VMCluster -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
+        $vm = Import-VApp -Source $NestedESXiApplianceOVA -OvfConfiguration $ovfconfig -Name "$VMName-91" -Location $VMCluster -VMHost $vmhost -Datastore $datastore -DiskStorageFormat thin
 
         My-Logger "Adding vmnic2/vmnic3 to $VMName ..."
         New-NetworkAdapter -VM $vm -Type Vmxnet3 -NetworkName $VMNetwork -StartConnected -confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
@@ -456,7 +461,7 @@ if($moveVMsIntovApp -eq 1) {
     if($deployNestedESXiVMs -eq 1) {
         My-Logger "Moving Nested ESXi VMs into $VAppName vApp ..."
         $NestedESXiHostnameToIPs.GetEnumerator() | Sort-Object -Property Value | Foreach-Object {
-            $vm = Get-VM -Name $_.Key -Server $viConnection
+            $vm = Get-VM -Name "$($_.Key)-91" -Server $viConnection
             Move-VM -VM $vm -Server $viConnection -Destination $VApp -Confirm:$false | Out-File -Append -LiteralPath $verboseLogFile
         }
     }

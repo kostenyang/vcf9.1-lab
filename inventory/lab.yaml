@@ -1,87 +1,115 @@
 # =============================================================================
-#  VCF 9 Lab inventory  —  明文, 非敏感資料
-#  密碼 / token 放 inventory/secrets/lab.yaml (sops 加密)
+#  VCF 9.1 Lab inventory  —  明文, 非敏感資料 (IP/FQDN/VLAN/datastore)
+#  密碼 / token 放 inventory/secrets/lab.yaml
+#
+#  ⚠ 對齊「實機」: domain = home.lab, mgmt = 10.0.0.0/23 (10.0.0.x + 10.0.1.x 同段).
+#     值來自實機 DNS (10.0.0.200 / home.lab zone) 與 autodeploy/add-dns 腳本.
+#     (舊版本寫 lab.com + 切開 10.0.1/10.0.2/10.0.3 是理想化、沒對到實機, 已更正.)
 # =============================================================================
 
 lab:
   name: vcf-m02
-  domain: lab.com
+  domain: home.lab
 
 # -------- 物理 / 基礎服務 (lab 外圍) ---------------------------------------
 infra:
-  # 你的 lab vCenter (跑 nested 的那個外層 vCenter)
+  # 外層 vCenter (跑 nested 的那台實體 vCenter)
   outer_vcenter:
-    fqdn: labvc.lab.com
+    fqdn: labvc.home.lab
     ip:   10.0.0.101
     user: administrator@vsphere.local
+    # 部署 nested VM 的目標 (Deploy-NestedESXi-And-Installer.ps1 用)
+    datacenter: Datacenter
+    cluster:    Cluster
+    datastore:  vsanDatastore
+    portgroup:  Trunk-Nobinding        # VLAN Trunk portgroup (nested 用)
+    vm_folder:  VCF
 
-  # AD + DNS + jumpbox
+  # AD + DNS + jumpbox (這台機; 也是跑所有 PowerShell 腳本的 automation host)
   jumpbox:
-    fqdn: dc01.lab.com
+    fqdn: dc01.home.lab
     ip:   10.0.0.200
-    role: [ad, dns, jumpbox]
+    role: [ad, dns, jumpbox, automation]
 
-  # 自動化主機 (這台跑你的所有 script)
-  automation_host:
-    ip:   10.0.0.65
-    user: labops
+  # 服務位址
+  services:
+    dns:    10.0.0.200
+    ntp:    10.0.1.254
+    syslog: 10.0.0.123
+    gateway: 10.0.0.1
+    netmask: 255.255.254.0             # /23
 
-# -------- VCF Management Domain --------------------------------------------
+# -------- VCF Management Domain (M02) --------------------------------------
 vcf:
   management_domain:
     name: vcf-m02
-    sddc_manager:
-      fqdn: sddc-mgr.lab.com
-      # ip 由 VCF Installer 賦予
-    inner_vcenter:
-      fqdn: vc-mgmt.lab.com
+    pool_name: vcf-m02-cl01-np01
+    ceip_enabled: false
+    vsan_esa: false
+
+    vcf_installer: { hostname: vcf-m02-inst01, fqdn: vcf-m02-inst01.home.lab, ip: 10.0.1.4 }
+    sddc_manager:  { hostname: vcf-m02-sddcm01, fqdn: vcf-m02-sddcm01.home.lab, ip: 10.0.1.18 }
+    inner_vcenter: { hostname: vcf-m02-vc01,    fqdn: vcf-m02-vc01.home.lab,    ip: 10.0.1.19,
+                     size: small, sso_domain: vsphere.local,
+                     datacenter: vcf-m02-dc01, cluster: vcf-m02-cl01 }
     nsx_manager:
-      fqdn: nsx-mgmt.lab.com
+      vip_hostname:  vcf-m02-nsx01
+      vip_fqdn:      vcf-m02-nsx01.home.lab
+      vip_ip:        10.0.1.21
+      node_hostname: vcf-m02-nsx01a
+      node_fqdn:     vcf-m02-nsx01a.home.lab
+      node_ip:       10.0.1.20
+      size:          medium
+      transport_vlan: 0
+
+    # VCF Operations 三件套 (完整部署含這些)
+    operations:    { hostname: vcf-m02-ops01,   fqdn: vcf-m02-ops01.home.lab,   ip: 10.0.1.22, size: small }
+    fleet:         { hostname: vcf-m02-fleet01, fqdn: vcf-m02-fleet01.home.lab, ip: 10.0.1.23 }
+    collector:     { hostname: vcf-m02-opsc01,  fqdn: vcf-m02-opsc01.home.lab,  ip: 10.0.1.24, size: small }
+
+    # VCF 9.1 專屬元件 (Automation / VSP / VIDB / License) — IP 在 10.0.0.170-175
+    automation:    { vip_fqdn: vcf-m02-auto-vip.home.lab,      vip_ip: 10.0.0.170,
+                     platform_fqdn: vcf-m02-auto-platform.home.lab, platform_ip: 10.0.0.171, size: small }
+    vsp:           { fqdn: vcf-m02-vsp01.home.lab,    ip: 10.0.0.172 }
+    shared:        { fqdn: vcf-m02-shared01.home.lab, ip: 10.0.0.173 }
+    vidb:          { fqdn: vcf-m02-vidb.home.lab,     ip: 10.0.0.174, size: small }
+    license:       { fqdn: vcf-m02-license.home.lab,  ip: 10.0.0.175 }
+    hcx:           { fqdn: vcf-m02-hcx.home.lab,      ip: 10.0.1.26 }
 
 # -------- Nested ESXi hosts (4 台 management domain) -----------------------
-# name            = ESXi hostname (不含 -91 後綴)
-# nested_vm_name  = 外層 vCenter (labvc.lab.com) 上看到的 VM 名 (含 -91 後綴)
+# name           = ESXi hostname / 外層 vCenter 上的 VM 名
+# fqdn           = ESXi mgmt vmk FQDN (home.lab)
 hosts:
-  - name: vcf-m02-esx01
-    mgmt_ip: 10.0.1.14
-    fqdn: esx01.lab.com
-    vmotion_ip: 10.0.2.14
-    vsan_ip:    10.0.3.14
-    role: management
-    nested_vm_name: vcf-m02-esx01-91
+  - { name: vcf-m02-esx01, fqdn: vcf-m02-esx01.home.lab, mgmt_ip: 10.0.1.14, vmotion_ip: 192.168.23.9,  vsan_ip: 192.168.24.9,  role: management }
+  - { name: vcf-m02-esx02, fqdn: vcf-m02-esx02.home.lab, mgmt_ip: 10.0.1.15, vmotion_ip: 192.168.23.10, vsan_ip: 192.168.24.10, role: management }
+  - { name: vcf-m02-esx03, fqdn: vcf-m02-esx03.home.lab, mgmt_ip: 10.0.1.16, vmotion_ip: 192.168.23.11, vsan_ip: 192.168.24.11, role: management }
+  - { name: vcf-m02-esx04, fqdn: vcf-m02-esx04.home.lab, mgmt_ip: 10.0.1.17, vmotion_ip: 192.168.23.12, vsan_ip: 192.168.24.12, role: management }
 
-  - name: vcf-m02-esx02
-    mgmt_ip: 10.0.1.15
-    fqdn: esx02.lab.com
-    vmotion_ip: 10.0.2.15
-    vsan_ip:    10.0.3.15
-    role: management
-    nested_vm_name: vcf-m02-esx02-91
-
-  - name: vcf-m02-esx03
-    mgmt_ip: 10.0.1.16
-    fqdn: esx03.lab.com
-    vmotion_ip: 10.0.2.16
-    vsan_ip:    10.0.3.16
-    role: management
-    nested_vm_name: vcf-m02-esx03-91
-
-  - name: vcf-m02-esx04
-    mgmt_ip: 10.0.1.17
-    fqdn: esx04.lab.com
-    vmotion_ip: 10.0.2.17
-    vsan_ip:    10.0.3.17
-    role: management
-    nested_vm_name: vcf-m02-esx04-91
+# nested ESXi VM sizing (Deploy-NestedESXi-And-Installer.ps1 用)
+nested_sizing:
+  vcpu:          24
+  memory_gb:     256
+  cache_vdisk_gb:    100
+  capacity_vdisk_gb: 1000
 
 # -------- 網路 -------------------------------------------------------------
 network:
-  mgmt:    { vlan: 10, cidr: 10.0.1.0/24, gateway: 10.0.1.1 }
-  vmotion: { vlan: 20, cidr: 10.0.2.0/24, gateway: 10.0.2.1 }
-  vsan:    { vlan: 30, cidr: 10.0.3.0/24, gateway: 10.0.3.1 }
-  overlay: { vlan: 40, cidr: 10.0.4.0/24, gateway: 10.0.4.1 }
+  mgmt:    { cidr: 10.0.0.0/23,     gateway: 10.0.0.1,      vlan: 0 }   # mgmt untagged (照 5/13 spec)
+  vmotion: { cidr: 192.168.23.0/24, gateway: 192.168.23.254, vlan: 13, range_start: 192.168.23.9, range_end: 192.168.23.12 }
+  vsan:    { cidr: 192.168.24.0/24, gateway: 192.168.24.254, vlan: 14, range_start: 192.168.24.9, range_end: 192.168.24.12 }
+  nsx_tep: { cidr: 192.168.29.0/24, gateway: 192.168.29.254, range_start: 192.168.29.9, range_end: 192.168.29.24 }
 
-# -------- ISO / depot 檔位置 (放在 jumpbox / 自動化主機) ------------------
+# -------- DNS zones (Set-DnsRecords.ps1 用; 跑在 jumpbox/DNS = 10.0.0.200) --
+dns:
+  server: 10.0.0.200
+  forward_zone: home.lab
+  reverse_zones:                       # 對應 mgmt 段 (10.0.0.x / 10.0.1.x)
+    - { zone: 0.0.10.in-addr.arpa, subnet: 10.0.0 }
+    - { zone: 1.0.10.in-addr.arpa, subnet: 10.0.1 }
+
+# -------- ISO / depot / OVA 檔位置 (放在 jumpbox E:\9.1) -------------------
 artifacts:
-  esxi_91_iso:   E:/9.1/VMware-VMvisor-Installer-9.1.0.0.25370933.x86_64.iso
-  esxi_91_depot: E:/9.1/VMware-ESXi-9.1.0.0.25370933-depot.zip
+  nested_esxi_ova:   E:/9.1/Nested_ESXi9.1.0.0_Appliance_Template_v1.0.ova
+  vcf_installer_ova: E:/9.1/VCF-SDDC-Manager-Appliance-9.1.0.0.25371088.ova
+  esxi_91_iso:       E:/9.1/VMware-VMvisor-Installer-9.1.0.0.25370933.x86_64.iso
+  esxi_91_depot:     E:/9.1/VMware-ESXi-9.1.0.0.25370933-depot.zip
