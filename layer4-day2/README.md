@@ -16,6 +16,7 @@
 | `Safe-Shutdown-VCF-Services-Runtime.md` | 計畫性關機 VCF Services Runtime Cluster(Fleet + Instance)的官方腳本流程,含 dry-run / skip-poweroff / 完整關機三模式 |
 | `Shutdown-Lab.md` | **整個 lab 完整關機 / 開機 SOP** —— 10 個 phase 順序、依賴關係、本 lab(M02 + 外層)逐台動作 |
 | `VCFA-Day2-Setup-FirstVMApp.md` | **VCF Automation 9.1 設定流程** —— 登入 → Cloud Account/Zone/Profiles/Mappings → Project → Cloud Template → 部署**第一個 VM app**，含架構/流程圖、單一 VM YAML、排錯速查、截圖清單 |
+| `VCFA-VSP-Shutdown-Startup-Runbook.md` | **VCFA+VSP 計畫性關機/開機 runbook（省電）** —— 只關 VCFA+VSP(叢集不動)；VSP 用 KB 440874 官方腳本 drain、VCFA guest shutdown；含 Windows 排程、踩雷(drain timeout 600→2400、guest shutdown 沒關成要硬關)與快速指令 |
 
 ## 跑法
 
