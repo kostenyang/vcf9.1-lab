@@ -113,3 +113,44 @@ artifacts:
   vcf_installer_ova: E:/9.1/VCF-SDDC-Manager-Appliance-9.1.0.0.25371088.ova
   esxi_91_iso:       E:/9.1/VMware-VMvisor-Installer-9.1.0.0.25370933.x86_64.iso
   esxi_91_depot:     E:/9.1/VMware-ESXi-9.1.0.0.25370933-depot.zip
+
+# -------- 遷移「來源端」(舊環境, 要遷到上面 VCFA 9 的那套) -------------------
+#  ⚠ 這是 API 遷移專案的 SOURCE: vRA 8 / Aria Automation 8 + 配套 vIDM / vROps.
+#     不屬於 M02 VCF 9.1 lab, 但在同一 home.lab / mgmt 網段, 一起記錄方便對照.
+#     下列事實為 live 實測 (2026-07-01, 從 10.0.0.200 DNS 解析 + curl/requests 打通).
+#     密碼放 inventory/secrets/lab.yaml 的 vra8 區塊 (見 lab.example.yaml).
+migration_source:
+  vra8:                                  # Aria Automation 8 (被遷移的舊 IaaS 平台)
+    fqdn: vra.home.lab
+    ip:   10.0.0.203
+    user: configadmin                    # 內建本機管理帳號 (System Domain)
+    product: "VMware Aria Automation 8 (vRA 8)"
+    iaas_api_version: "2021-07-15"        # /iaas/api/about latestApiVersion (supported: 2019-01-15, 2021-07-15)
+    # 舊登入: POST /csp/gateway/am/api/login {username,password} -> cspAuthToken (Bearer, ~1h)
+    #   ★ 此端點在 VCF Automation 9 已移除 -> 改 OAuth /oauth/provider|tenant/<org>/token
+    login_endpoint: /csp/gateway/am/api/login
+    # live 盤點 (GET, 皆 HTTP 200):
+    live_counts:
+      projects: 2
+      cloud_accounts: 1                  # labvc.lab.com
+      zones: 1
+      flavor_image_network_profiles: [1, 1, 1]
+      fabric_networks: 29
+      machines: 73
+      deployments: 4
+      catalog_items: 9
+      catalog_types: 5
+      blueprints: 6                      # -> VCF Automation 9 改為 Cloud Template
+  vidm:                                  # vRA8 的認證來源 (Workspace ONE Access)
+    fqdn: vidm.home.lab
+    ip:   10.0.0.202
+    product: "VMware Identity Manager / Workspace ONE Access"
+    health: "GET /SAAS/API/1.0/REST/system/health -> HTTP 200"
+  vrops:                                 # 舊監控 (對映到 VCF Operations 10.0.1.22)
+    fqdn: vrops.home.lab
+    ip:   10.0.0.111
+    product: "vRealize Operations (舊)"
+  # 對映到目標端 (見上方 vcf.management_domain):
+  #   vra8   -> automation (vcf-m02-auto-vip.home.lab, 10.0.0.170)   認證改 OAuth
+  #   vidm   -> VCF Identity Broker (內建於 VCFA 9)
+  #   vrops  -> operations (vcf-m02-ops01.home.lab, 10.0.1.22)
