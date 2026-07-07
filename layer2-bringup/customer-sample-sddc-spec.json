@@ -1,0 +1,237 @@
+{
+  "_comment_00_about": "VMware Cloud Foundation 9.1 — Management Domain bring-up specification (SddcSpec). SAMPLE / TEMPLATE for a customer on REAL HARDWARE. Submit to the VCF Installer: POST https://<installer-fqdn>/v1/sddcs with a Bearer token obtained from POST /v1/tokens (user admin@local). Keys beginning with _comment* are documentation only and are ignored by the installer; you may delete them.",
+  "_comment_01_howto": "Replace every <UPPER_CASE_TOKEN> with your site value. Numeric fields (vlanId, mtu) contain EXAMPLE numbers — change them to match your fabric. subnetMask assumes /24; adjust if different.",
+  "_comment_02_passwords": "Every *Password field must meet VCF policy: 12+ characters incl. upper + lower + digit + special, no dictionary words, no repeats. Use a distinct strong password per component (shown here as separate tokens).",
+  "_comment_03_dns": "EVERY hostname/FQDN below must have BOTH forward (A) and reverse (PTR) DNS records created BEFORE bring-up, and NTP must be reachable.",
+  "_comment_03b_skipvalidation": "The three skip* fields below RELAX pre-checks. skipEsxThumbprintValidation=trusts ESXi SSL thumbprints without prompting; skipGatewayPingValidation=does not require gateways to answer ICMP; skipChecks[]=bypasses individual validators (NESTED_CPU_CHECK, NIC_COUNT_CHECK, MIN_HOST_CHECK, VSAN_ESA_HCL_CHECK, ESX_THUMBPRINT_CHECK). Needed for nested labs or when you knowingly accept a failing check. On fully HCL-certified physical hardware you may set the two booleans to false and use an empty skipChecks [] (or delete all three). NOTE: skipChecks[] is not present in every VCF Installer build's published OpenAPI schema — it was accepted in our validated bring-up but may be ignored on some builds; always confirm with a validate-only run (POST /v1/sddcs/validations) first.",
+  "_comment_04_hostname_convention": "SHORT hostname is expected in: sddcManagerSpec.hostname, vcenterSpec.vcenterHostname, nsxtManagers[].hostname, hostSpecs[].hostname (installer appends dnsSpec.domain). FULL FQDN is expected in: nsxtSpec.vipFqdn, vspClusterSpec.*Fqdn, vcfAutomationSpec.hostname/platformFqdn, vcfOperationsSpec/CollectorSpec hostname, licenseServerSpec.hostname, vidbSpec.hostname. Preserve this split.",
+  "_comment_05_components": "This deployment REQUIRES vcfAutomationSpec (VCF Automation) and vcfOperationsSpec (VCF Operations). Because those are present, the VCF Installer MANDATES vidbSpec (Identity Broker) — verified live: omitting it fails validation with VIDB_SPEC_MUST_BE_SET.error. vcfOperationsCollectorSpec + licenseServerSpec accompany the full stack. NSX Edge cluster + AVN are configured AFTER bring-up, not in this spec.",
+
+  "sddcId": "<SDDC_ID>",
+  "workflowType": "VCF",
+  "ceipEnabled": true,
+  "managementPoolName": "<MGMT_NETWORK_POOL_NAME>",
+
+  "skipEsxThumbprintValidation": true,
+  "skipGatewayPingValidation": true,
+  "skipChecks": [
+    "NESTED_CPU_CHECK",
+    "NIC_COUNT_CHECK",
+    "MIN_HOST_CHECK",
+    "VSAN_ESA_HCL_CHECK",
+    "ESX_THUMBPRINT_CHECK"
+  ],
+
+  "dnsSpec": {
+    "subdomain": "<DNS_DOMAIN>",
+    "nameservers": ["<DNS_SERVER_IP_PRIMARY>", "<DNS_SERVER_IP_SECONDARY>"]
+  },
+
+  "ntpServers": ["<NTP_SERVER_IP_PRIMARY>", "<NTP_SERVER_IP_SECONDARY>"],
+
+  "sddcManagerSpec": {
+    "hostname": "<SDDC_MANAGER_SHORTNAME>",
+    "rootPassword": "<SDDCMGR_ROOT_PASSWORD>",
+    "sshPassword": "<SDDCMGR_VCF_USER_PASSWORD>",
+    "localUserPassword": "<SDDCMGR_LOCAL_ADMIN_PASSWORD>"
+  },
+
+  "vcenterSpec": {
+    "vcenterHostname": "<VCENTER_SHORTNAME>",
+    "rootVcenterPassword": "<VCENTER_ROOT_PASSWORD>",
+    "ssoDomain": "vsphere.local",
+    "vmSize": "small",
+    "storageSize": "lstorage",
+    "adminUserSsoUsername": "administrator@vsphere.local",
+    "adminUserSsoPassword": "<VCENTER_SSO_ADMIN_PASSWORD>",
+    "_comment_vmSize": "vmSize options: tiny|small|medium|large|xlarge. storageSize: lstorage|xlstorage. 'small'+'lstorage' suits most management domains; size up for large inventories."
+  },
+
+  "nsxtSpec": {
+    "_comment": "Production management domain uses a 3-node NSX Manager cluster. Provide 3 distinct short hostnames (each with DNS) plus the cluster VIP FQDN.",
+    "nsxtManagerSize": "medium",
+    "nsxtManagers": [
+      { "hostname": "<NSX_MANAGER_1_SHORTNAME>" },
+      { "hostname": "<NSX_MANAGER_2_SHORTNAME>" },
+      { "hostname": "<NSX_MANAGER_3_SHORTNAME>" }
+    ],
+    "vipFqdn": "<NSX_MANAGER_VIP_FQDN>",
+    "rootNsxtManagerPassword": "<NSX_ROOT_PASSWORD>",
+    "nsxtAdminPassword": "<NSX_ADMIN_PASSWORD>",
+    "nsxtAuditPassword": "<NSX_AUDIT_PASSWORD>",
+    "transportVlanId": 1614,
+    "ipAddressPoolSpec": {
+      "name": "<TEP_POOL_NAME>",
+      "subnets": [
+        {
+          "cidr": "<TEP_SUBNET_CIDR>",
+          "gateway": "<TEP_GATEWAY_IP>",
+          "ipAddressPoolRanges": [
+            { "start": "<TEP_POOL_RANGE_START>", "end": "<TEP_POOL_RANGE_END>" }
+          ]
+        }
+      ]
+    }
+  },
+
+  "datastoreSpec": {
+    "_comment": "vSAN OSA (esaConfig.enabled=false) — matches customer hardware. FTT=1 needs >=3 fault domains (4 hosts here). OSA expects each host to have cache + capacity disk groups. Switch to ESA (esaConfig.enabled=true) only on all-NVMe, ESA-HCL-certified hosts.",
+    "vsanSpec": {
+      "datastoreName": "<VSAN_DATASTORE_NAME>",
+      "failuresToTolerate": 1,
+      "esaConfig": { "enabled": false }
+    }
+  },
+
+  "dvsSpecs": [
+    {
+      "dvsName": "<VDS_NAME>",
+      "mtu": 9000,
+      "networks": ["MANAGEMENT", "VSAN", "VMOTION"],
+      "vmnicsToUplinks": [
+        { "id": "vmnic0", "uplink": "uplink1" },
+        { "id": "vmnic1", "uplink": "uplink2" }
+      ],
+      "nsxTeamings": [
+        { "policy": "LOADBALANCE_SRCID", "activeUplinks": ["uplink1", "uplink2"], "standByUplinks": [] }
+      ],
+      "nsxtSwitchConfig": {
+        "transportZones": [
+          { "name": "<OVERLAY_TZ_NAME>", "transportType": "OVERLAY" },
+          { "name": "<VLAN_TZ_NAME>", "transportType": "VLAN" }
+        ]
+      }
+    }
+  ],
+
+  "networkSpecs": [
+    {
+      "networkType": "MANAGEMENT",
+      "subnet": "<MGMT_SUBNET_CIDR>",
+      "vlanId": 1611,
+      "mtu": 1500,
+      "gateway": "<MGMT_GATEWAY_IP>",
+      "subnetMask": "255.255.255.0",
+      "portGroupKey": "<MGMT_PORTGROUP_KEY>",
+      "teamingPolicy": "loadbalance_loadbased",
+      "activeUplinks": ["uplink1", "uplink2"],
+      "standbyUplinks": []
+    },
+    {
+      "networkType": "VSAN",
+      "subnet": "<VSAN_SUBNET_CIDR>",
+      "vlanId": 1613,
+      "mtu": 9000,
+      "gateway": "<VSAN_GATEWAY_IP>",
+      "subnetMask": "255.255.255.0",
+      "portGroupKey": "<VSAN_PORTGROUP_KEY>",
+      "includeIpAddressRanges": [
+        { "startIpAddress": "<VSAN_RANGE_START>", "endIpAddress": "<VSAN_RANGE_END>" }
+      ],
+      "teamingPolicy": "loadbalance_loadbased",
+      "activeUplinks": ["uplink1", "uplink2"],
+      "standbyUplinks": []
+    },
+    {
+      "networkType": "VM_MANAGEMENT",
+      "subnet": "<MGMT_SUBNET_CIDR>",
+      "vlanId": 1611,
+      "mtu": 1500,
+      "gateway": "<MGMT_GATEWAY_IP>",
+      "portGroupKey": "<VM_MGMT_PORTGROUP_KEY>",
+      "teamingPolicy": "loadbalance_loadbased",
+      "activeUplinks": ["uplink1", "uplink2"],
+      "standbyUplinks": []
+    },
+    {
+      "networkType": "VMOTION",
+      "subnet": "<VMOTION_SUBNET_CIDR>",
+      "vlanId": 1612,
+      "mtu": 9000,
+      "gateway": "<VMOTION_GATEWAY_IP>",
+      "subnetMask": "255.255.255.0",
+      "portGroupKey": "<VMOTION_PORTGROUP_KEY>",
+      "includeIpAddressRanges": [
+        { "startIpAddress": "<VMOTION_RANGE_START>", "endIpAddress": "<VMOTION_RANGE_END>" }
+      ],
+      "teamingPolicy": "loadbalance_loadbased",
+      "activeUplinks": ["uplink1", "uplink2"],
+      "standbyUplinks": []
+    }
+  ],
+
+  "clusterSpec": {
+    "datacenterName": "<DATACENTER_NAME>",
+    "clusterName": "<CLUSTER_NAME>"
+  },
+
+  "_comment_vsp": "vspClusterSpec = VCF Management Platform / Fleet services (REQUIRED for the primary VCF instance). fleetFqdn is mandatory — omitting it makes 'Save VCF Management Components' fail with INVENTORY_INTERNAL_SERVER_ERROR. ipv4Pool must contain enough FREE management-subnet IPs (reserve a small contiguous block, all clean in DNS).",
+  "vspClusterSpec": {
+    "instanceFqdn": "<VSP_INSTANCE_FQDN>",
+    "platformFqdn": "<VSP_PLATFORM_FQDN>",
+    "fleetFqdn": "<VSP_FLEET_FQDN>",
+    "systemUserPassword": "<VSP_SYSTEM_USER_PASSWORD>",
+    "size": "small",
+    "ipv4Pool": {
+      "ipRange": { "startIpAddress": "<VSP_POOL_START>", "endIpAddress": "<VSP_POOL_END>" }
+    }
+  },
+
+  "hostSpecs": [
+    { "hostname": "<ESXI_HOST_1_SHORTNAME>", "credentials": { "username": "root", "password": "<ESXI_ROOT_PASSWORD>" } },
+    { "hostname": "<ESXI_HOST_2_SHORTNAME>", "credentials": { "username": "root", "password": "<ESXI_ROOT_PASSWORD>" } },
+    { "hostname": "<ESXI_HOST_3_SHORTNAME>", "credentials": { "username": "root", "password": "<ESXI_ROOT_PASSWORD>" } },
+    { "hostname": "<ESXI_HOST_4_SHORTNAME>", "credentials": { "username": "root", "password": "<ESXI_ROOT_PASSWORD>" } }
+  ],
+
+  "_comment_optionB": "----- OPTIONAL full-stack blocks below. Delete any you are not deploying. version strings must match the bundles available in your depot for this VCF 9.1 release. -----",
+
+  "vcfAutomationSpec": {
+    "hostname": "<AUTOMATION_APPLIANCE_FQDN>",
+    "platformFqdn": "<AUTOMATION_PLATFORM_VIP_FQDN>",
+    "adminUserPassword": "<AUTOMATION_ADMIN_PASSWORD>",
+    "ipPool": [
+      "<AUTOMATION_POOL_IP_1>",
+      "<AUTOMATION_POOL_IP_2>",
+      "<AUTOMATION_POOL_IP_3>",
+      "<AUTOMATION_POOL_IP_4>",
+      "<AUTOMATION_POOL_IP_5>",
+      "<AUTOMATION_POOL_IP_6>"
+    ],
+    "internalClusterCidr": "<AUTOMATION_INTERNAL_CIDR>",
+    "nodePrefix": "<AUTOMATION_NODE_PREFIX>",
+    "size": "small",
+    "useExistingDeployment": false,
+    "_comment_internalCidr": "internalClusterCidr is a non-routable overlay for the automation K8s cluster; it must NOT overlap any real network in your environment (e.g. a private /16 such as 172.27.0.0/16)."
+  },
+
+  "vcfOperationsSpec": {
+    "nodes": [
+      { "hostname": "<OPERATIONS_NODE_FQDN>", "rootUserPassword": "<OPERATIONS_ROOT_PASSWORD>", "type": "master" }
+    ],
+    "adminUserPassword": "<OPERATIONS_ADMIN_PASSWORD>",
+    "applianceSize": "small",
+    "useExistingDeployment": false,
+    "_comment_scale": "Single master shown. For an HA Operations cluster add more nodes with type 'replica' / 'data' (and matching DNS)."
+  },
+
+  "vcfOperationsCollectorSpec": {
+    "hostname": "<OPERATIONS_COLLECTOR_FQDN>",
+    "rootUserPassword": "<OPERATIONS_COLLECTOR_ROOT_PASSWORD>",
+    "applianceSize": "small",
+    "useExistingDeployment": false
+  },
+
+  "licenseServerSpec": {
+    "hostname": "<LICENSE_SERVER_FQDN>",
+    "version": "9.1.0.0.25346031",
+    "useExistingDeployment": false
+  },
+
+  "vidbSpec": {
+    "_comment": "VCF Identity Broker. REQUIRED because vcfAutomationSpec/vcfOperationsSpec are present (installer rejects the spec with VIDB_SPEC_MUST_BE_SET.error otherwise). version must match the vIDB bundle in your depot for this release.",
+    "hostname": "<VIDB_FQDN>",
+    "version": "9.1.0.0.25368698",
+    "size": "small"
+  }
+}
