@@ -76,6 +76,11 @@ vcf:
     license:       { fqdn: vcf-m02-license.home.lab,  ip: 10.0.0.175 }
     hcx:           { fqdn: vcf-m02-hcx.home.lab,      ip: 10.0.1.26 }
 
+    # NSX VNA (Virtual Network Appliance) — VPC 有狀態服務, 2026-06-29 加裝 (1 節點)
+    nsx_vna:       { cluster_name: vna-cl01, form_factor: SMALL, service_type: VPC_SERVICES,
+                     node_fqdn: vcf-m02-vna01.home.lab, node_ip: 10.0.0.181,
+                     mgmt_pg: dvportgroup-24, overlay_tz: overlay-tz-mgmt-nsxt }
+
 # -------- Nested ESXi hosts (4 台 management domain) -----------------------
 # name           = ESXi hostname / 外層 vCenter 上的 VM 名
 # fqdn           = ESXi mgmt vmk FQDN (home.lab)
