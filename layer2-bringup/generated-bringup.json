@@ -10,7 +10,7 @@
     "subdomain": "home.lab",
     "nameservers": ["10.0.0.200"]
   },
-  "ntpServers": ["10.0.1.254"],
+  "ntpServers": ["10.0.0.200"],
   "sddcManagerSpec": {
     "hostname": "vcf-m02-sddcm01.home.lab",
     "useExistingDeployment": false,

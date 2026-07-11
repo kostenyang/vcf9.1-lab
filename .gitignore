@@ -38,3 +38,4 @@ batch-*.csv
 # ISO / depot (大檔不入 git)
 *.iso
 *-depot.zip
+layer2-bringup/*.bak-*

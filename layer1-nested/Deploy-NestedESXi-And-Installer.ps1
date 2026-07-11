@@ -94,11 +94,11 @@ $VCFInstallerOVA        = "E:\9.1\VCF-SDDC-Manager-Appliance-9.1.0.0.25371088.ov
 $VMDatacenter = "Datacenter"
 $VMCluster    = "Cluster"
 $VMNetwork    = "Trunk-Nobinding"
-$VMDatastore  = "vsanDatastore"
+$VMDatastore  = "ForNFS"        # nested ESXi 放 host95 本機快碟(nested vSAN 寫入 ~10x),避開外層 vSAN
 $VMNetmask    = "255.255.254.0"
 $VMGateway    = "10.0.0.1"
 $VMDNS        = "10.0.0.200"
-$VMNTP        = "10.0.1.254"
+$VMNTP        = "10.0.0.200"    # 10.0.1.254 已死,用 AD(唯一在服務的 NTP)
 $VMPassword   = Get-LabSecret 'esxi' 'root_pw'                # nested ESXi root
 $VMDomain     = "home.lab"
 $VMSyslog     = "10.0.0.123"
@@ -370,7 +370,8 @@ if($deployNestedESXiVMs -eq 1 -or $deployVCFInstaller -eq 1) {
 
     $datastore = Get-Datastore -Server $viConnection -Name $VMDatastore | Select-Object -First 1
     $cluster   = Get-Cluster  -Server $viConnection -Name $VMCluster
-    $vmhost    = $cluster | Get-VMHost | Select-Object -First 1
+    # 固定放 host 10.0.0.95(ForNFS 掛它 + 唯一 1024GB RAM 塞得下 4×256GB nested)
+    $vmhost    = Get-VMHost -Server $viConnection -Name '10.0.0.95'
 }
 
 # ─────────────────────────────────────────────

@@ -69,3 +69,28 @@ edge.node.vm.creation.max.wait.minutes=90
 > 對應腳本在本資料夾;`Set-VsanFtt0` / `Disable-HaAdmissionControl` / `Disable-NetworkRollback` /
 > `Set-NestedReservations` / `Reset-TrunkPromiscuous` / `Connect-OfflineDepot` / `Watch-Bringup`。
 > timeout 延長與 pty/su 細節另見 rtolab `timeout-tuning-operations-log.md`。
+
+---
+
+## 2026-07 全打掉重建血淚補充(七輪 VSP retry 換來的)
+
+> 教訓總綱:**上面整套配方,全打掉重建後 appliance 會歸零 → 每次重建都要重跑,不能只做一次。** 這次沒重跑,靠一輪一輪撞才補齊。**現已收斂成一鍵 `Apply-VspRecipe.ps1`,重建後、進 VSP 前直接跑。**
+
+### A. ⚠️ timeout/retry「兩台都要」,漏 Installer 照樣死
+- `orchestrator.task.retry.max` 預設 **60** → Installer(10.0.1.4)的 monitor 任務重試 60 次就 `failed after 60 retries` 判死,**不管 timeout 設多大**。
+- 這次只調了 SDDC Manager(10.0.1.18)漏了 Installer,前幾輪就算 bootstrap 已穩、崩潰降到個位數,仍被 Installer 的 60 次上限判死。
+- **正解:`orchestrator.task.retry.max=240` 兩台(10.0.1.18 + 10.0.1.4)都要**。`Set-DomainManagerTimeouts.ps1` 的 `-Target` 預設就是兩台,別漏跑。
+
+### B. bootstrap-vm apiserver 反覆 `connection refused`(OOM/swap)
+- 症狀:平台套件裝到一半,`dial tcp 10.0.0.226:6443: connect: connection refused` 反覆 50 次、VSP VM clone→死→重建迴圈,不收斂。
+- 根因:nested ESXi 被外層 swap → 內部 bootstrap k8s 的 apiserver/etcd 被 OOM/延遲幹掉。
+- **正解 = 外層 `Set-NestedReservations`**(對 4 台 nested ESXi 設 CPU/Mem reservation)。實測:套上後崩潰 50 → 近乎 0。
+- 反例:對「clone 來源 VM」設 `memoryReservationLockedToMax=True`(內層)**無效** —— 部署工具 clone 時會覆寫掉。有效的是**外層那層**。
+
+### C. retry 前務必清 pool
+- 殘留的 `bootstrap-vm-*` / `vcf-m02-vsp01-*` 佔住 `vspClusterSpec.ipv4Pool`(10.0.0.226-240),不刪 → `INIT0001 Validating configuration: IP x already in use` 直接 fail(連自己上一輪的 VSP node 佔 .227 都會擋)。
+- 每次 retry 前:刪光這兩類 VM、ping 確認 226-240 全空,再 PATCH。
+
+### D. 存取眉角(這次驗證)
+- appliance root **不可 SSH**;`vcf` SSH 猛連會 **pam faillock**(密碼對也被拒,要停手 ~15 分)。
+- **最穩:vCenter guest-ops(VMware Tools,`Invoke-VMScript` root/`VMware1!VMware1!`)** 繞過 sshd,不受 faillock 影響。SDDC Manager 走內層 vCenter、Installer 走外層 vCenter。
