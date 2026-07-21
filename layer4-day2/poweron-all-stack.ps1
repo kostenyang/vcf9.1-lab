@@ -42,15 +42,31 @@ try {
       $w = $tierWait[$lastTier]; if($w){ Log "  -- tier $lastTier 開完，等 ${w}s --"; Start-Sleep -Seconds $w }
     }
     try {
-      Invoke-RestMethod -Method Post -Uri "$base/api/vcenter/vm/$($v.vm)/power?action=start" -Headers $h -SkipCertificateCheck -TimeoutSec 30 | Out-Null
+      # nested VM 的 power start 偶爾 >30s 才回應 → 用 90s，避免 client timeout 取消掉(VCFA 常中此坑)
+      Invoke-RestMethod -Method Post -Uri "$base/api/vcenter/vm/$($v.vm)/power?action=start" -Headers $h -SkipCertificateCheck -TimeoutSec 90 | Out-Null
       Log "Power on [$($v.t)] $($v.name) [$($v.vm)]"
-    } catch { Log "Power on 失敗 $($v.name): $($_.Exception.Message)" }
+    } catch { Log "Power on 失敗 $($v.name): $($_.Exception.Message) → 稍後驗證重試" }
     $lastTier = $v.t
   }
 
-  Start-Sleep -Seconds 20
+  # 驗證 + 重試：任何該開卻仍 POWERED_OFF 的(排除保留的 vCenter)自動重開，最多 3 輪
+  for($round=1; $round -le 3; $round++){
+    Start-Sleep -Seconds 20
+    $sid = Invoke-RestMethod -Method Post -Uri "$base/api/session" -Headers @{Authorization="Basic $sec"} -SkipCertificateCheck -TimeoutSec 30
+    $h = @{ 'vmware-api-session-id' = $sid }
+    $all = Invoke-RestMethod -Uri "$base/api/vcenter/vm" -Headers $h -SkipCertificateCheck -TimeoutSec 30
+    $stillOff = $all | ?{ (Tier $_.name) -ne 0 -and $_.power_state -ne 'POWERED_ON' }
+    if(-not $stillOff){ Log "驗證第 $round 輪：全部該開的都已開機 ✓"; break }
+    foreach($v in $stillOff){
+      Log "驗證第 $round 輪：$($v.name) 仍 $($v.power_state) → 重開"
+      try { Invoke-RestMethod -Method Post -Uri "$base/api/vcenter/vm/$($v.vm)/power?action=start" -Headers $h -SkipCertificateCheck -TimeoutSec 90 | Out-Null }
+      catch { Log "  重開呼叫逾時/錯誤 $($v.name): $($_.Exception.Message)（可能已在開機中）" }
+    }
+  }
+
+  Start-Sleep -Seconds 15
   $all = Invoke-RestMethod -Uri "$base/api/vcenter/vm" -Headers $h -SkipCertificateCheck -TimeoutSec 30
-  Log "---- 開機指令送出後狀態 ----"
+  Log "---- 最終狀態 ----"
   $all | Sort-Object name | ForEach-Object { Log ("  {0,-30} {1}" -f $_.name,$_.power_state) }
   Log "==== 完成(各服務 Ready 另需 20-40 分鐘) ===="
 } catch {
