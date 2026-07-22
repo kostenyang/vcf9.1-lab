@@ -15,7 +15,7 @@ lab:
 infra:
   # 外層 vCenter (跑 nested 的那台實體 vCenter)
   outer_vcenter:
-    fqdn: labvc.home.lab
+    fqdn: labvc.lab.com                 # 實測憑證 CN=labvc.lab.com (外層在 lab.com; nested VCF 才是 home.lab)
     ip:   10.0.0.101
     user: administrator@vsphere.local
     # 部署 nested VM 的目標 (Deploy-NestedESXi-And-Installer.ps1 用)
@@ -38,6 +38,16 @@ infra:
     syslog: 10.0.0.123
     gateway: 10.0.0.1
     netmask: 255.255.254.0             # /23
+
+  # Offline VCF Software Depot (nginx HTTPS + basic auth; builder = vcf9offlinescript repo)
+  offline_depot:
+    fqdn: vcf9depotserver.home.lab
+    ip:   10.0.0.61
+    url:  https://vcf9depotserver.home.lab
+    path: /PROD
+    auth_user: vcfdepot                # 密碼在 secrets/
+    cert_san: [ vcf9depotserver.home.lab, 10.0.0.61 ]   # 9.1 fleet 硬性要求 SAN 含 FQDN+IP
+    ca_trust: "已用 add_trusted_certificate.py 匯進 VSP 平台 (KB 442978)"
 
 # -------- VCF Management Domain (M02) --------------------------------------
 vcf:
@@ -72,9 +82,25 @@ vcf:
                      platform_fqdn: vcf-m02-auto-platform.home.lab, platform_ip: 10.0.0.171, size: small }
     vsp:           { fqdn: vcf-m02-vsp01.home.lab,    ip: 10.0.0.172 }
     shared:        { fqdn: vcf-m02-shared01.home.lab, ip: 10.0.0.173 }
-    vidb:          { fqdn: vcf-m02-vidb.home.lab,     ip: 10.0.0.174, size: small }
+    vidb:          { fqdn: vcf-m02-vidb.home.lab,     ip: 10.0.0.174, size: small }   # VCF SSO → home.lab AD; vCenter/NSX/Ops/VCFA 四產品全接 vidb (2026-07)
     license:       { fqdn: vcf-m02-license.home.lab,  ip: 10.0.0.175 }
     hcx:           { fqdn: vcf-m02-hcx.home.lab,      ip: 10.0.1.26 }
+
+    # VNA (VPC Network Appliance) — VPC gateway/NAT 服務 (NSX Policy API 部署)
+    vna:           { hostname: vcf-m02-vna01, fqdn: vcf-m02-vna01.home.lab, ip: 10.0.0.181,
+                     form_factor: SMALL, service: VPC_SERVICES, cluster: vna-cl01 }
+
+    # VKS Supervisor — 2026-07 拉起, 走 VDS + Foundation Load Balancer (非 NSX VPC)
+    supervisor:
+      name:           vcf-m02-sup01
+      cluster:        vcf-m02-cl01       # domain-c9
+      status:         RUNNING
+      networking:     VDS+FLB            # 非 NSX VPC (繞開 GatewayConnectionReady 死路)
+      cp_mgmt_ips:    10.0.0.182-186     # SupervisorControlPlaneVM (mgmt)
+      flb_ips:        10.0.0.187-188     # Foundation Load Balancer
+      api_endpoint:   10.0.0.182
+      k8s_services:   10.96.0.0/23
+      images_library: supervisor-local   # Local Content Library (offline 匯入, 無 HTTP server)
 
 # -------- Nested ESXi hosts (4 台 management domain) -----------------------
 # name           = ESXi hostname / 外層 vCenter 上的 VM 名
@@ -98,6 +124,18 @@ network:
   vmotion: { cidr: 192.168.23.0/24, gateway: 192.168.23.254, vlan: 13, range_start: 192.168.23.9, range_end: 192.168.23.12 }
   vsan:    { cidr: 192.168.24.0/24, gateway: 192.168.24.254, vlan: 14, range_start: 192.168.24.9, range_end: 192.168.24.12 }
   nsx_tep: { cidr: 192.168.29.0/24, gateway: 192.168.29.254, range_start: 192.168.29.9, range_end: 192.168.29.24 }
+  workload: { cidr: 192.168.15.0/24, gateway: 192.168.15.254, vlan: 5, range_start: 192.168.15.32, range_end: 192.168.15.63 }  # Supervisor workload (RouterOS ether4); VS VIP 192.168.15.64-95
+
+# -------- NSX VPC (VCF 9.1 native VPC networking; VNA + Distributed TGW) ---
+#  Day0 骨架 bring-up 自建; VNA 掛在 connectivity profile 的 service_gateway.
+#  租戶 VPC 對外靠 default SNAT → external block. (Supervisor 沒走這條, 走 VDS+FLB.)
+nsx_vpc:
+  project:               default
+  transit_gateway:       { name: default, kind: Day0, transit_subnet: 100.64.0.0/21 }
+  external_ip_block:     10.0.0.0/23        # Day0 External (visibility EXTERNAL; 租戶 SNAT 出口)
+  private_tgw_ip_block:  172.31.0.0/16
+  vpc_connectivity_profile: default         # service_gateway = vna-cl01, default SNAT on
+  test_vpc:              { name: vpc-app01, private: 10.244.0.0/24, subnet_01: 10.244.0.0/26 }
 
 # -------- DNS zones (Set-DnsRecords.ps1 用; 跑在 jumpbox/DNS = 10.0.0.200) --
 dns:
