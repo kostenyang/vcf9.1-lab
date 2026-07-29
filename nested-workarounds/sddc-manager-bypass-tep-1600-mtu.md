@@ -8,6 +8,22 @@
 
 ---
 
+## TL;DR 結論說明
+
+**問題**:nested VCF 給不到 NSX TEP overlay 要的 1600 MTU,bring-up / 加 host / 加 workload domain 會卡在 MTU validation。能不能繞?
+
+| 對象 | 能不能 bypass | 用什麼 |
+|---|---|---|
+| **VCF Installer 9.0**(bring-up) | ✅ 能 | blog 原招:`validation.disable.network.connectivity.check=true` + `nsxt.mtu.validation.skip=true` |
+| **VCF Installer 9.1**(bring-up) | ✅ 能 | 同上,但 `nsxt.mtu.validation.skip` 在 9.1 是 **no-op**(見下),真正生效的是 `validation.disable.network.connectivity.check=true`。或 API `POST /v1/sddcs?skipValidations=true` |
+| **SDDC Manager 9.1**(day-N:加 host / 加 WLD) | ✅ 能 | 同一個 `application.properties`(共用 domain-manager);連線類 `validation.disable.*.connectivity.check` + `vcf.skip.nsx.dayn.guardrails` 等 |
+
+**一句話**:三者都能繞,因為 **Installer 與 SDDC Manager 共用同一份 domain-manager**,設定檔同一個(`/etc/vmware/vcf/domainmanager/application.properties`),重啟同一支腳本。
+**9.1 的關鍵發現**(拆 jar 實測、比 blog 深一層):`nsxt.mtu.validation.skip` 這個 key **在 9.1.0.0100 build 根本不存在**(0 命中)→ 是 9.0 沿用下來的殘留、放著無害但不生效;**真正讓檢查過關的是 `validation.disable.network.connectivity.check=true`**。
+⚠️ **只 nested/homelab 用,Broadcom 不支援,prod 勿碰**(1600 MTU 是 NSX overlay 真的需要,跳檢查不會讓底層網路真的能跑)。
+
+---
+
 ## 一、blog 的原招(VCF Installer / bring-up)
 
 SSH 進 **VCF Installer** appliance(vcf user),在 domain-manager 設定檔加兩行,再重啟服務:
