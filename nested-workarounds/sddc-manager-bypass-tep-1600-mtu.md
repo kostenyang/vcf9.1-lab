@@ -136,6 +136,25 @@ William Lam 另有 **9.1 專文**同時涵蓋 Installer + SDDC Manager:
 - 重啟兩種都行:`systemctl restart domainmanager`(Lam 9.1)或 `sddcmanager_restart_services.sh`(blog 9.0)。
 - **另有 API 繞法**(bring-up,社群/KB 提到):`POST https://<installer>/v1/sddcs?skipValidations=true`(先確認只剩 MTU 一項 validation 卡著再用)。
 
+## 三之三、實測確認:VCF 9.1 fleet vs SDDC Manager —— 檢查在哪跑、bypass 下在哪
+
+常見疑問:「9.1 是 fleet(VCF Operations)在管,那 MTU 檢查是不是在 fleet 那台?bypass 要下在 fleet 嗎?」
+**實測(guest-ops 各 appliance)給的答案:不是,fleet 那台不碰。**
+
+| Appliance | 角色 | 有 domainmanager? | 跑 ESX TEP MTU 檢查? | bypass 下在這? |
+|---|---|---|---|---|
+| **VCF Operations** `vcf-m02-ops01`(= fleet) | vRealize Operations 衍生(analytics/collector/casa/vcops-web);fleet 管理/監控/SSO/憑證/depot UI | ❌ 無(`/opt/vmware/vcf/domainmanager` 不存在) | ❌ **不跑** | ❌ 不用碰 |
+| **SDDC Manager** `vcf-m02-sddcm01`（9.1.0.0300） | 單一 VCF instance 的 domain 生命週期(加 host / 加 WLD) | ✅ domainmanager + operationsmanager + lcm + UI | ✅ **day-N 在這跑** | ✅ **這台** |
+| **VCF Installer**（bring-up 用完常砍) | 初次 bring-up | ✅ 同一份 domainmanager | ✅ **bring-up 在這跑** | ✅ bring-up 時這台 |
+
+**結論**:MTU/TEP 檢查是 **domain-manager 元件**的事,**只有 VCF Installer 與 SDDC Manager 有 domain-manager**;**fleet(VCF Operations)是 vROps-based 上層,不跑這個檢查、也沒那個設定檔**。所以:
+- **Bring-up 卡 MTU** → 下在 **VCF Installer** 的 `domainmanager/application.properties`。
+- **Day-N(加 host / 加 workload domain)卡 MTU** → 下在 **SDDC Manager** 的 `domainmanager/application.properties`。
+- **fleet(VCF Operations)那台不用動。**
+
+> 重啟粒度:`systemctl restart domainmanager`(只重啟 domain-manager,快、影響小)即可讓新 property 生效;`sddcmanager_restart_services.sh` 會重啟整台所有服務(慢)。
+> ⚠️ SDDC Manager 上還有 `operationsmanager/application.properties`(Wm Lam 的 vSAN ESA HCL 繞法要動到那個),但 **MTU/連線檢查只認 domainmanager 那個**。
+
 ## 四、⚠️ 重要警語(誠實話)
 - 這些是 **domain-manager 內部、未公開的 validation-skip property**(拆 jar 得到),**Broadcom 不支援、prod 千萬別用**。純 **nested/homelab** 為了繞實體網路做不到 1600 MTU 才用。
 - **1600 MTU 有它的理由**:NSX overlay(Geneve)封裝需要 >1500 的 MTU;真環境 MTU 不夠 → overlay 流量會斷 → workload 網路實際會壞。跳過檢查只是讓 **bring-up/day-N 流程過關**,不會讓底層網路真的能跑 —— nested lab 因為 host 間走同一台實體/巢狀 switch、封包不出實體網卡才「能動」。
