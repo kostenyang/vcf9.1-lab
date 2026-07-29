@@ -100,6 +100,26 @@ echo 'y' | /opt/vmware/vcf/operationsmanager/scripts/cli/sddcmanager_restart_ser
 
 ---
 
+## 三之二、VCF Installer 9.1 也適用嗎?→ **適用**(但同一個 key 之謎已釐清)
+
+William Lam 另有 **9.1 專文**同時涵蓋 Installer + SDDC Manager:
+[VCF 9.1 — Comprehensive VCF Installer & SDDC Manager Configuration Workarounds for Lab Deployments](https://williamlam.com/2026/05/vcf-9-1-comprehensive-vcf-installer-sddc-manager-configuration-workarounds-for-lab-deployments.html)。
+他 9.1 專文**仍列** `validation.disable.network.connectivity.check=true` **+** `nsxt.mtu.validation.skip=true`(放 domainmanager/application.properties,`systemctl restart domainmanager`),Installer 與 SDDC Manager 手法相同。
+
+**但**我對本 lab **9.1.0.0100** 的 domain-manager/operations-manager fat jar 做過深掃(5 jar、多層 nested、全 bytes、0 read error):
+| 字串 | 命中 |
+|---|---|
+| `nsxt.mtu.validation.skip` | **0** |
+| `nsxt.mtu` / `mtu.validation` | **0**(連 checkId 都不在,排除動態組 key) |
+| `validation.disable.network.connectivity.check` | ✅ 有(`AuditSinglePortgroupAction`) |
+
+→ 判讀:**在 9.1.0.0100 build,`nsxt.mtu.validation.skip` 是 no-op(沿用自 9.0 blog 的殘留行,無害但不生效)**;真正讓 TEP/大封包可達性檢查過關的是 **`validation.disable.network.connectivity.check=true`**。William Lam 兩行都放 → 就算 mtu 那行沒作用,connectivity 那行也把事情辦了(所以他的做法 9.1「照樣能過」,只是原因跟字面不同)。
+
+**因為 Installer 與 SDDC Manager 共用同一份 9.1 domain-manager**,以上結論 **Installer 9.1 同樣成立**:放 `validation.disable.network.connectivity.check=true` 即可過 MTU/TEP 檢查;`nsxt.mtu.validation.skip=true` 放著無害但別指望它。(不同 9.1.x patch 若那 key 又出現,兩行都放最保險。)
+
+- 重啟兩種都行:`systemctl restart domainmanager`(Lam 9.1)或 `sddcmanager_restart_services.sh`(blog 9.0)。
+- **另有 API 繞法**(bring-up,社群/KB 提到):`POST https://<installer>/v1/sddcs?skipValidations=true`(先確認只剩 MTU 一項 validation 卡著再用)。
+
 ## 四、⚠️ 重要警語(誠實話)
 - 這些是 **domain-manager 內部、未公開的 validation-skip property**(拆 jar 得到),**Broadcom 不支援、prod 千萬別用**。純 **nested/homelab** 為了繞實體網路做不到 1600 MTU 才用。
 - **1600 MTU 有它的理由**:NSX overlay(Geneve)封裝需要 >1500 的 MTU;真環境 MTU 不夠 → overlay 流量會斷 → workload 網路實際會壞。跳過檢查只是讓 **bring-up/day-N 流程過關**,不會讓底層網路真的能跑 —— nested lab 因為 host 間走同一台實體/巢狀 switch、封包不出實體網卡才「能動」。
