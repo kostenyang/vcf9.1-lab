@@ -1,0 +1,32 @@
+{
+  "results" : [ {
+    "connection_path" : "/infra/distributed-vlan-connections/c8eaf2cc-6b26-4503-b240-bc6d76745ecd",
+    "urpf_mode" : "STRICT",
+    "resource_type" : "TransitGatewayAttachment",
+    "id" : "70f2c114-0fd9-497b-9612-5ba85d85a654",
+    "display_name" : "Day0 Transit Gateway Attachment",
+    "tags" : [ {
+      "scope" : "vcf-orchestration",
+      "tag" : "vcf"
+    } ],
+    "path" : "/orgs/default/projects/default/transit-gateways/default/attachments/70f2c114-0fd9-497b-9612-5ba85d85a654",
+    "relative_path" : "70f2c114-0fd9-497b-9612-5ba85d85a654",
+    "parent_path" : "/orgs/default/projects/default/transit-gateways/default",
+    "remote_path" : "",
+    "unique_id" : "6752a6a0-c348-45cd-a1a8-7107cd445bcc",
+    "realization_id" : "6752a6a0-c348-45cd-a1a8-7107cd445bcc",
+    "owner_id" : "1514032b-2b40-4174-ba5e-f9e6c324b5d1",
+    "marked_for_delete" : false,
+    "overridden" : false,
+    "_protection" : "NOT_PROTECTED",
+    "_system_owned" : false,
+    "_last_modified_user" : "svc-vcf-m02-sddcm01-vcf-m02-5780",
+    "_create_time" : 1783868566362,
+    "_create_user" : "svc-vcf-m02-sddcm01-vcf-m02-5780",
+    "_last_modified_time" : 1783868566362,
+    "_revision" : 0
+  } ],
+  "result_count" : 1,
+  "sort_by" : "display_name",
+  "sort_ascending" : true
+}

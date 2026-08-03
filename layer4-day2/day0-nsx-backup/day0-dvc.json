@@ -1,0 +1,29 @@
+{
+  "gateway_addresses" : [ "10.0.0.1/23" ],
+  "vlan_id" : 0,
+  "subnet_extension_connection" : "DISABLED",
+  "associated_ip_block_paths" : [ ],
+  "resource_type" : "DistributedVlanConnection",
+  "id" : "c8eaf2cc-6b26-4503-b240-bc6d76745ecd",
+  "display_name" : "Day0 Distributed Vlan Connection",
+  "tags" : [ {
+    "scope" : "vcf-orchestration",
+    "tag" : "vcf"
+  } ],
+  "path" : "/infra/distributed-vlan-connections/c8eaf2cc-6b26-4503-b240-bc6d76745ecd",
+  "relative_path" : "c8eaf2cc-6b26-4503-b240-bc6d76745ecd",
+  "parent_path" : "/infra",
+  "remote_path" : "",
+  "unique_id" : "899b0580-ae90-4a96-8e8d-c37ee454e3df",
+  "realization_id" : "899b0580-ae90-4a96-8e8d-c37ee454e3df",
+  "owner_id" : "1514032b-2b40-4174-ba5e-f9e6c324b5d1",
+  "marked_for_delete" : false,
+  "overridden" : false,
+  "_protection" : "NOT_PROTECTED",
+  "_system_owned" : false,
+  "_last_modified_user" : "svc-vcf-m02-sddcm01-vcf-m02-5780",
+  "_create_time" : 1783868562979,
+  "_create_user" : "svc-vcf-m02-sddcm01-vcf-m02-5780",
+  "_last_modified_time" : 1783868562979,
+  "_revision" : 0
+}

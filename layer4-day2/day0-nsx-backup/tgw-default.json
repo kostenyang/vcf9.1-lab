@@ -1,0 +1,28 @@
+{
+  "transit_subnets" : [ "100.64.0.0/21" ],
+  "is_default" : true,
+  "span" : {
+    "span_path" : "/infra/network-spans/default--1514032b-2b40-4174-ba5e-f9e6c324b5d1",
+    "type" : "ClusterBasedSpan"
+  },
+  "external_ip_signaling_mode" : "NONE",
+  "resource_type" : "TransitGateway",
+  "id" : "default",
+  "display_name" : "Default Transit Gateway",
+  "path" : "/orgs/default/projects/default/transit-gateways/default",
+  "relative_path" : "default",
+  "parent_path" : "/orgs/default/projects/default",
+  "remote_path" : "",
+  "unique_id" : "d1574e39-cac1-4817-8744-f065bb176cc6",
+  "realization_id" : "d1574e39-cac1-4817-8744-f065bb176cc6",
+  "owner_id" : "1514032b-2b40-4174-ba5e-f9e6c324b5d1",
+  "marked_for_delete" : false,
+  "overridden" : false,
+  "_protection" : "NOT_PROTECTED",
+  "_system_owned" : false,
+  "_last_modified_user" : "system",
+  "_create_time" : 1783868241469,
+  "_create_user" : "system",
+  "_last_modified_time" : 1783868241469,
+  "_revision" : 0
+}

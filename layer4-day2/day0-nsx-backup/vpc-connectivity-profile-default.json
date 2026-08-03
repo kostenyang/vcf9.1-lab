@@ -1,0 +1,32 @@
+{
+  "is_default" : true,
+  "transit_gateway_path" : "/orgs/default/projects/default/transit-gateways/default",
+  "external_ip_blocks" : [ "/infra/ip-blocks/ff8f1a66-dfba-437c-9f4f-d9fffa3b51eb" ],
+  "private_tgw_ip_blocks" : [ "/infra/ip-blocks/71608568-b667-45f7-a0db-1482c3c47c06" ],
+  "service_gateway" : {
+    "enable" : true,
+    "nat_config" : {
+      "enable_default_snat" : true
+    },
+    "edge_cluster_paths" : [ "/infra/sites/default/enforcement-points/default/virtual-network-appliance-clusters/vna-cl01" ]
+  },
+  "resource_type" : "VpcConnectivityProfile",
+  "id" : "default",
+  "display_name" : "Default VPC Connectivity Profile",
+  "path" : "/orgs/default/projects/default/vpc-connectivity-profiles/default",
+  "relative_path" : "default",
+  "parent_path" : "/orgs/default/projects/default",
+  "remote_path" : "",
+  "unique_id" : "1e2203ea-c756-4197-9cfd-1908708eef79",
+  "realization_id" : "1e2203ea-c756-4197-9cfd-1908708eef79",
+  "owner_id" : "1514032b-2b40-4174-ba5e-f9e6c324b5d1",
+  "marked_for_delete" : false,
+  "overridden" : false,
+  "_protection" : "NOT_PROTECTED",
+  "_system_owned" : false,
+  "_last_modified_user" : "admin",
+  "_create_time" : 1783868241553,
+  "_create_user" : "system",
+  "_last_modified_time" : 1783941785847,
+  "_revision" : 3
+}
