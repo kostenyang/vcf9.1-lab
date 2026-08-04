@@ -198,6 +198,78 @@ PUT /policy/api/v1/orgs/default/projects/<apitest-org-projUUID>/vpcs/vpc-test01
 
 ---
 
+## 8. VLAN Extension（把實體 VLAN 的 L2 延伸進 VPC subnet）
+
+一般 VPC subnet（`Private`）是獨立 IP + 經 TGW 路由（L3）。**VLAN Extension subnet** 反過來 —— 把 VPC 的一個 subnet 跟**實體 VLAN 做 L2 橋接**：VPC 裡的 VM 跟實體 VLAN 上的裝置**同一個廣播域、同網段**，IP 從那段 VLAN 拿。典型用途：lift-and-shift（VM 搬進 VPC 但**不換 IP**、要跟實體既有設備同 L2）。
+
+### 8.1 物件模型（兩顆綁一起）
+```
+Distributed VLAN Connection (extension)              VPC Subnet
+  subnet_extension_connection = ENABLED_L2_AND_L3 ◄─  vlan_connection = <上面那條的 path>
+  vlan_id / gateway = 實體 VLAN 的 gw                  (access_mode 由此自動衍生, 不可手設)
+  associated_ip_block_paths = [一個 subnet_exclusive block]
+```
+- `subnet_extension_connection` 三態：`DISABLED`（不可用）/ `ENABLED_L2`（純 L2 bridge，subnet 不能接 VPC gateway）/ `ENABLED_L2_AND_L3`（L2 bridge **+** 可接 VPC gateway 路由）。
+- `ENABLED_L2_AND_L3` **必須**在 `associated_ip_block_paths` 帶剛好一個 **`subnet_exclusive=true`** 的 IP block（L3 側 IPAM）。
+- VPC subnet 只要填 **`vlan_connection`** 就變 extension subnet；`access_mode` 是 readOnly、自動衍生（本例 = `Public`）。
+
+### 8.2 本 lab 實作（VLAN 7 · 全 API · 不碰 Day0）
+用空閒 **VLAN 7 = 192.168.17.0/24（RouterOS gw .254）**，做在 default project 的測試 VPC `vpc-vlanext`（apitest-org 的 project 無 /infra 存取權，dedicated 連線要另經 VCFA 綁 org）：
+
+```
+PUT /policy/api/v1/infra/ip-blocks/ipb-vlan7-extend
+     { cidr:192.168.17.0/24, visibility:EXTERNAL, subnet_exclusive:true }
+PUT /policy/api/v1/infra/distributed-vlan-connections/dtgw-vlan7-extend
+     { vlan_id:7, gateway_addresses:[192.168.17.254/24],
+       subnet_extension_connection:ENABLED_L2_AND_L3,
+       associated_ip_block_paths:[/infra/ip-blocks/ipb-vlan7-extend] }
+PUT /policy/api/v1/orgs/default/projects/default/vpcs/vpc-vlanext/subnets/ext-vlan7
+     { vlan_connection:/infra/distributed-vlan-connections/dtgw-vlan7-extend }
+```
+realized 結果：subnet `ip_addresses=192.168.17.0/24`、`gateway=192.168.17.254`（**就是 RouterOS，不是 NSX 自建**）、`vlan_extension={vlan_id:7, vpc_gateway_connection_enable:true}`、`span=ClusterBasedSpan`。
+
+### 8.3 實際原理：封包怎麼走（frame-level）
+
+```mermaid
+flowchart LR
+  subgraph VPCSIDE["VPC 側 · overlay"]
+    VM["VM<br/>192.168.17.50"]
+    SEG["ext-vlan7 subnet<br/>overlay segment<br/>192.168.17.0/24"]
+    VM --- SEG
+  end
+  subgraph BR["Distributed Bridge · 逐 host · VNA 提供"]
+    B["bridge endpoint 5595c1a8…<br/>overlay ⇄ VLAN 7<br/>counter: vlan_to_vpc / vpc_to_vlan"]
+  end
+  subgraph PHYSIDE["實體側 · VLAN 7"]
+    RO["RouterOS ether6<br/>192.168.17.254 = gateway"]
+    DEV["實體裝置<br/>192.168.17.x"]
+    RO --- DEV
+  end
+  SEG === B
+  B ==>|"frame + VLAN 7 tag → nested trunk → 外層 DVS"| RO
+
+  classDef v fill:#e7f6ec,stroke:#2f9e57;
+  classDef p fill:#e2f1f2,stroke:#0e7c86;
+  class VM,SEG v;
+  class RO,DEV p;
+```
+
+1. VM 送 frame → VPC subnet 的 **overlay segment**（在 ESXi host 上）
+2. **distributed bridge**（跑在 host、ClusterBasedSpan、VNA/DTGW 服務）把 frame 橋接 + **打 VLAN 7 tag**
+3. tagged VLAN7 → host uplink → nested trunk → 外層 DVS → VLAN7 portgroup → **RouterOS ether6** 及 VLAN 7 上任何實體裝置
+4. 回程 tagged VLAN7 → 橋回 overlay segment → 回到 VM
+
+→ VM 與實體 VLAN 7 **同廣播域**：ARP / broadcast / DHCP 互通，VM 的 gateway = RouterOS `.254`（跟實體主機一模一樣）。橋的雙向 counter：`vlan_to_vpc_packets`（實體→VPC）、`vpc_to_vlan_packets`（VPC→實體）。
+> 查 counter：`GET .../vpcs/vpc-vlanext/subnets/ext-vlan7/statistics` → `vlan_extension.{vlan_to_vpc,vpc_to_vlan}_packets`。
+
+### 8.4 ⚠️ 目前狀態與驗證注意
+- 建好當下 `connectivity_state=DISCONNECTED`、counter 全 0、subnet 0 ports。
+- 原因：NSX distributed bridge **逐 host 惰性啟用** —— segment 上**要有 workload port**、該 host 才會拉起橋接並轉發。沒 VM = 橋沒 active = 不轉發。
+- 要真正「看到封包跨橋」：**部一台 VM 掛到 ext-vlan7 segment + 設 static IP 192.168.17.x/24 gw .254** → ① 橋在該 host active ② VM ping .254 ③ 從 mgmt ping VM ④ RouterOS `/ip/arp` 出現 VM MAC 在 ether6（鐵證）⑤ counter 跳動。
+- 這步也順帶驗證 **VLAN 7 是否 trunk 通到 nested host**（本 nested 環境唯一未驗的資料面環節：連線 realize ≠ 資料面一定通）。
+
+---
+
 ## 附錄 A：關鍵 URN（本輪，重建會變）
 
 | 物件 | URN / ID |
@@ -208,6 +280,9 @@ PUT /policy/api/v1/orgs/default/projects/<apitest-org-projUUID>/vpcs/vpc-test01
 | External IP Block `ext-ipblock-vlan8` | `urn:vcloud:ipSpace:64bf072c-9f99-4e4b-a42a-7a1c7a6ec956` |
 | Distributed VLAN Conn `dtgw-vlan8-egress` | `urn:vcloud:distributedVlanConnection:ee0d5d55-abdf-4e02-8081-a3202c161b21` |
 | Regional Networking Setting | `urn:vcloud:regionalNetworkingSetting:d3967fd5-1e8a-401e-aa34-58590b5627d0` |
+| VLAN ext 連線 `dtgw-vlan7-extend` | `/infra/distributed-vlan-connections/dtgw-vlan7-extend`（VLAN 7, ENABLED_L2_AND_L3） |
+| VLAN ext IP block `ipb-vlan7-extend` | `/infra/ip-blocks/ipb-vlan7-extend`（192.168.17.0/24, subnet_exclusive） |
+| VLAN ext 測試 VPC / subnet | `/orgs/default/projects/default/vpcs/vpc-vlanext/subnets/ext-vlan7`（bridge endpoint 5595c1a8…） |
 
 ## 附錄 B：Provider token（API 用）
 ```
