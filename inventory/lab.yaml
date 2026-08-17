@@ -81,6 +81,21 @@ vcf:
                      node_fqdn: vcf-m02-vna01.home.lab, node_ip: 10.0.0.181,
                      mgmt_pg: dvportgroup-24, overlay_tz: overlay-tz-mgmt-nsxt }
 
+# -------- 獨立 Aria Automation 8.18 (直接跑在外層 vCenter, 非 nested VCF 的一部分) ----
+#   繞過壞掉的 Aria Suite Lifecycle, 用 ovftool 直接部 OVA; vRA 8 走 vidm(Workspace ONE Access)認證.
+#   放置: 外層 vCenter 10.0.0.101 / host 10.0.0.98 / datastore pcssd3 / portgroup "VM Network".
+#   密碼放 inventory/secrets/lab.yaml (已 gitignore). 平時關機省電, 用到再開.
+aria_standalone:
+  vra8:
+    lcm:  { fqdn: vrlcm.home.lab, ip: 10.0.0.201, role: aria-suite-lifecycle-8.18, status: 棄用-部署引擎缺陷已繞過 }
+    vidm: { fqdn: vidm.home.lab,  ip: 10.0.0.202, role: workspace-one-access-3.3.7, admin_user: admin }
+    vra:  { fqdn: vra.home.lab,   ip: 10.0.0.203, role: aria-automation-8.18.1, admin_user: admin, domain: System Domain }
+    vcenter_cloud_account: vc-labvc8            # vRA 裡接的是外層 vCenter 10.0.0.101
+    project: vra-lab
+    static_ip_pool: { start: 10.0.0.210, end: 10.0.0.218 }   # 藍圖部 VM 用 (assignment: static)
+    blueprints: [ centos7-small, ubuntu-medium, web-app ]
+  # 另有 vra9 一套 (升級測試用, 一樣是 8.18): vidm9=10.0.0.167 / vra9=10.0.0.168, 靜態池 10.0.0.211-219
+
 # -------- Nested ESXi hosts (4 台 management domain) -----------------------
 # name           = ESXi hostname / 外層 vCenter 上的 VM 名
 # fqdn           = ESXi mgmt vmk FQDN (home.lab)
