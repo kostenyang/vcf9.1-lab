@@ -113,13 +113,23 @@ flowchart LR
     D --> E["VCFA 後端就緒<br/>登入恢復"]
 ```
 
-## 5. 驗證(2026-08-18)
+## 5. 驗證(2026-08-18,全鏈完成)
 
-- ✅ `vcfa-service-manager` 不再 panic,正常 reconcile(修復當下確認)
-- ✅ tenant-manager `/oauth/provider/token` 恢復服務
-- ⏳ Supervisor pod 轉 Running 與 VCFA 登入:等 backoff 週期後確認(本文件提交當下仍在收斂中)
+- ✅ `vcfa-service-manager` 不再 panic,2/2 Running 0 重啟,正常 reconcile
+- ✅ tenant-manager `/oauth/provider/token`:404 → 正常回應(裸 GET 得 405 + VCD 標準錯誤格式 = 路由活了)
+- ✅ **新映像拉取實證成功**:auto-attach 新 pod 於修復後 ~1 分鐘內拉取成功、1/1 Running
+- ✅ image-controller log 不再出現 oauth 404
+- ✅ **殘骸清理完成**:全 Supervisor 刪除 606 個死 pod(ProviderFailed 522→0、ErrImagePull 84→0,`svc-metrics-aggregator` 佔 522、`svc-cci-ns` 40)。清理後全叢集 **64 Running / 1 Pending / 1 Completed**
+- ✅ VCFA 服務 deployment:auto-attach 1/1、metrics-aggregator 1/1、configuration-service 1/1(cci-ns 清理後重拉大映像收斂中)
+- ✅ VCFA 前端 `/automation/`、`/tm/login/` 均 200
 
-> 收斂後的殘餘清理:Supervisor 端累積的數百個 `ProviderFailed` 死 pod-VM 需清理(等新 pod 全部 Running 後再清,`kubectl delete pod --field-selector status.phase=Failed -n <ns>`)。
+清理指令(對每個 ns):
+```bash
+kubectl -n <ns> delete pod --field-selector status.phase=Failed --wait=false
+```
+
+### 後續觀察事項(非阻塞)
+- Supervisor 只有 esx04 以 agent node 身分 Ready,esx01-03 的 spherelet 在週末電源循環後未重新註冊(workload 全數正常運行,不影響 VCFA;待後續排查)。
 
 ## 6. 排障過程的教訓
 
