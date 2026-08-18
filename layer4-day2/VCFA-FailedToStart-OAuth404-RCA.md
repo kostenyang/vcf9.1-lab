@@ -128,8 +128,15 @@ flowchart LR
 kubectl -n <ns> delete pod --field-selector status.phase=Failed --wait=false
 ```
 
-### 後續觀察事項(非阻塞)
-- Supervisor 只有 esx04 以 agent node 身分 Ready,esx01-03 的 spherelet 在週末電源循環後未重新註冊(workload 全數正常運行,不影響 VCFA;待後續排查)。
+### 後續觀察事項(非阻塞,與本次 VCFA 修復無關)
+
+1. **`cci-ns-controller-manager` 0/1 未收斂**(獨立問題,不影響 VCFA 登入/使用)
+   - 症狀:pod 長期 Pending;Image CR 先卡 `Fetching`(kubelet 超時報 ErrImagePull,`lastError` 空),刪 CR 重建後改卡 `Resolving`。
+   - 已排除:VCFA OAuth(本案根因,已修)、mgmt-image-proxy(此映像**不走** proxy)、docker-registry pod 健康、esx04 節點 Spherelet Ready。
+   - 判斷:映像 `vkm-svs/package/vkm-svs` 在 **Supervisor 本地 docker-registry** 的解析/同步有問題(`/v2/.../tags/list` 查詢無回應),屬 Supervisor 映像供應層,需另案處理。
+   - 影響:CCI namespace 自助功能;VCFA console 與其他服務不受影響。
+
+2. **Supervisor 僅 esx04 以 agent node 註冊**,esx01-03 的 spherelet 在週末電源循環後未重新註冊(現有 workload 正常運行;待後續排查)。
 
 ## 6. 排障過程的教訓
 
