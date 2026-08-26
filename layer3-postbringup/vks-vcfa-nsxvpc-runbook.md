@@ -195,3 +195,98 @@ govc host.esxcli -host '<host-path>' -- software vib list | grep -i spherelet
 - `vks-airgap-runbook.md` — air-gap 取得 Supervisor / VKr 映像
 - `vks-airgap-tkr-upload.md` — TKr / VKr 上傳細節
 - `vcfa-supervisor-enablement-checklist.md`
+
+---
+
+## 9. 開 VKS guest cluster 才會踩到的四個坑(2026-08-26 補)
+
+### 9.1 `default_kubernetes_service_content_library` 與懸空引用
+
+`GET /api/vcenter/namespace-management/clusters/{cluster}` 有個
+`default_kubernetes_service_content_library` 欄位,與 `workloads/images/settings` **是兩回事**。
+
+🔴 **最坑的是**:`workloads/images/settings` 裡只要有**任何一個 content library 已被刪除**,
+WCP 驗證整批失敗,導致映像同步完全停擺 —— 症狀是
+`OSImage` 與 `KubernetesRelease` 永遠 0 個,但**沒有任何錯誤訊息**。
+
+錯誤只有在 PATCH cluster 設定時才會冒出來:
+```
+Failed to validate Content Library UUID <id>, error: not found
+```
+清掉懸空引用(只保留仍存在的庫)後,controller 立刻動作:
+```
+kr.OSImage added {"name":"vmi-xxxx"}
+kr.KR      added {"name":"v1.32.7---vmware.3-fips-vkr.1"}
+```
+
+**教訓**:刪 VCFA content library / Region 之前,先把它從 `workloads/images/settings` 移除。
+
+### 9.2 Namespace 要自己掛 content library
+
+建 VCFA Namespace 時若沒帶 `contentLibraries`,namespace 內不會有 `VirtualMachineImage`
+(cluster-scoped 的 `ClusterVirtualMachineImage` 不會自動投影進去)。
+
+```bash
+# ⚠ v2 端點不支援 PATCH(回 404),要用 v1
+curl -X PATCH https://<vc>/api/vcenter/namespaces/instances/<ns> \
+  -d '{"vm_service_spec":{"content_libraries":["<libId>"],"vm_classes":["best-effort-small",...]}}'
+```
+
+### 9.3 storage class 名稱是「儲存原則」轉換來的,不是 datastore 名
+
+namespace 綁 `vSAN Default Storage Policy` → k8s storage class 叫 **`vsan-default-storage-policy`**。
+用 datastore 名(如 `m01-cl01-vsan-storage-policy`)會被 webhook 擋:
+```
+admission webhook denied: storage class(es): xxx not found
+```
+
+### 9.4 🔴 VPC External IP Block 必須能被 BGP 宣告出去 —— T0 要加 `TGW_STATIC`
+
+guest cluster 的 API VIP 由 VPC 的 external IP block 配發(例:`192.168.20.1`)。
+T0 **學得到**這條路由:
+```
+192.168.20.1/32 via 169.254.64.9 type=tgws
+```
+但 VCF 建出來的 T0 預設重分配規則**不含 TGW 類型**,所以不會宣告進 BGP
+→ 整個 lab 網路對這個 VIP 是黑洞 → CAPI 無法檢查 guest cluster
+→ Machine 條件全是 `InspectionFailed`,cluster 卡在 `Provisioned / Available=False`。
+
+**修法**:PATCH T0 locale-service,在 `route_redistribution_types` 加入 **`TGW_STATIC`**
+(保留原有全部類型與第二條 `SYSTEM-VCD-EDGE-SERVICES-REDISTRIBUTION` 規則)。
+
+合法值可用「故意送錯值」的方式讓 NSX 吐出完整清單:
+```
+value XXX is not one of the allowed values [TIER0_STATIC, TIER0_CONNECTED, TIER0_EXTERNAL_INTERFACE,
+TIER0_SEGMENT, TIER0_ROUTER_LINK, TIER0_SERVICE_INTERFACE, TIER0_LOOPBACK_INTERFACE,
+TIER0_DNS_FORWARDER_IP, TIER0_IPSEC_LOCAL_IP, TIER0_NAT, TIER0_EVPN_TEP_IP, TIER1_NAT, TIER1_STATIC,
+TIER1_LB_VIP, TIER1_LB_SNAT, TIER1_DNS_FORWARDER_IP, TIER1_CONNECTED, TIER1_SERVICE_INTERFACE,
+TIER1_SEGMENT, TIER1_IPSEC_LOCAL_ENDPOINT, INTER_VRF_STATIC, TGW_STATIC]
+```
+加完後對端路由器立刻學到 `192.168.20.1/32 via <T0 uplink IP> active=true`,ping 即通。
+**這比加靜態路由正確 —— 加了 TGW_STATIC 之後靜態路由就不需要了。**
+
+### 9.5 建立 guest cluster 的最小 manifest
+
+```yaml
+apiVersion: cluster.x-k8s.io/v1beta1     # 會自動升到 v1beta2
+kind: Cluster
+metadata: {name: vks-cl01, namespace: <ns>}
+spec:
+  clusterNetwork:
+    services: {cidrBlocks: ["10.96.0.0/16"]}
+    pods:     {cidrBlocks: ["192.168.0.0/20"]}
+    serviceDomain: cluster.local
+  topology:
+    class: builtin-generic-v3.3.0        # 會自動升到最新相容版(v3.6.0)
+    version: v1.32.7+vmware.3-fips-vkr.1 # 要對應 KubernetesRelease
+    controlPlane: {replicas: 1}
+    workers:
+      machineDeployments:
+      - {class: node-pool, name: np1, replicas: 1}
+    variables:
+    - {name: vmClass,      value: best-effort-small}
+    - {name: storageClass, value: vsan-default-storage-policy}
+```
+`machineDeployments[].class` 要用 ClusterClass 裡定義的名稱(查
+`kubectl get clusterclass <cc> -n <ns> -o jsonpath='{.spec.workers.machineDeployments[*].class}'`,
+本 lab 是 `node-pool`)。
