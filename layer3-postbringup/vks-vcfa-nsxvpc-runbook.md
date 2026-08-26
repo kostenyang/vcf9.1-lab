@@ -290,3 +290,36 @@ spec:
 `machineDeployments[].class` 要用 ClusterClass 裡定義的名稱(查
 `kubectl get clusterclass <cc> -n <ns> -o jsonpath='{.spec.workers.machineDeployments[*].class}'`,
 本 lab 是 `node-pool`)。
+
+### 9.6 🔴 nested 環境:MachineHealthCheck 會誤殺 control plane,形成無窮重建迴圈
+
+**症狀**:`kubectl -n <ns> get machine` 每隔一兩分鐘 CP machine 的名稱就換一次
+(`vks-cl01-kqqgv-vxbp5` → `-9tk8r` → `-8dxs2`),KCP 永遠 `Initialized=False`,
+所有 etcd / apiserver 條件是 `Unknown (InspectionFailed)`。
+
+很容易誤判成 bootstrap 失敗,但事件會說實話:
+```
+MachineMarkedUnhealthy   Machine <ns>/<machine> has been marked as unhealthy by <ns>/<kcp>
+DeleteSuccess            virtualmachine/<machine>  Delete success
+```
+
+**根因**:nested lab 太慢 —— 節點取得 IP、啟動 VMware Tools、跑完 kubeadm init 的時間
+超過 MachineHealthCheck 的逾時,於是被判定不健康 → 刪除 → 新的一台再次來不及 → 永不收斂。
+(正式環境硬體夠快通常不會遇到。)
+
+**處置**:先暫停 MHC 讓節點活得夠久
+```bash
+for m in $(kubectl -n <ns> get machinehealthcheck -o name); do
+  kubectl -n <ns> annotate $m cluster.x-k8s.io/paused=true --overwrite
+done
+```
+暫停後同一台 VM 就能撐過初始化(實測:先前每台約 2 分鐘被砍,暫停後順利拿到
+`172.30.0.2/27`、`guestToolsRunning`、subnetport `ready=True`)。
+
+⚠️ **cluster 起來後要把註解移除**,恢復自癒能力:
+```bash
+kubectl -n <ns> annotate machinehealthcheck <name> cluster.x-k8s.io/paused-
+```
+
+診斷用資源:`vks-cl01-ssh` / `vks-cl01-ssh-password`(secret)可登入 guest 節點看 cloud-init;
+VM 開機畫面可用 `govc vm.console -capture out.png <vm-path>` 擷取,確認 OS 有沒有正常開起來。
