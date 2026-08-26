@@ -323,3 +323,51 @@ kubectl -n <ns> annotate machinehealthcheck <name> cluster.x-k8s.io/paused-
 
 診斷用資源:`vks-cl01-ssh` / `vks-cl01-ssh-password`(secret)可登入 guest 節點看 cloud-init;
 VM 開機畫面可用 `govc vm.console -capture out.png <vm-path>` 擷取,確認 OS 有沒有正常開起來。
+
+### 9.7 🔴 未解:guest cluster VPC 連不到 Supervisor,bootstrap 卡死
+
+**這是目前擋住 VKS guest cluster 起來的最後一關(2026-08-26 尚未解決)。**
+
+節點 OS 開機正常(console 可見 Photon login prompt)、拿到 VPC IP、VMware Tools 執行中,
+但 22 以外的 port 全關,KCP 永遠 `Initialized=False`。
+
+用 guest-ops 進節點(Tools 有跑就能進,不需要 SSH)找到真因:
+
+```bash
+# 節點密碼在 secret 裡,使用者是 vmware-system-user(root 不行)
+kubectl -n <ns> get secret <cluster>-ssh-password -o jsonpath='{.data.ssh-passwordkey}' | base64 -d
+govc guest.run -vm '<vm-path>' -l "vmware-system-user:<pw>" /bin/bash /tmp/probe.sh
+```
+
+`/var/log/cloud-init-output.log`:
+```
+curl: (7) Failed to connect to supervisor.default.svc port 6443 after 4 ms: Could not connect to server
+   (retry 5 次後放棄)
+cloud-init status: error - ('scripts_user', RuntimeError('Runparts: 1 failures (runcmd)'))
+```
+
+服務狀態:
+```
+sshd active | kubelet activating | containerd inactive | cloud-final failed
+```
+
+節點內實測:
+```
+supervisor.default.svc  → 解析不出來
+172.26.0.2:6443  closed   (Supervisor CP,kube-system VPC)
+10.0.0.182:6443  closed   (Supervisor 管理 VIP)
+10.96.0.1:443    closed   (k8s service CIDR)
+路由:default via 172.30.0.1,只有自己的 /27
+```
+
+**結論**:guest cluster 的 VPC(172.30.0.0/27)到 Supervisor 完全不通,
+bootstrap 腳本拿不到加入叢集所需的資料 → containerd 不啟動 → kubelet 卡 activating。
+
+**待查方向**(下次從這裡接手):
+1. 兩個 VPC(`kube-system_xxxxx` 與 guest cluster 的 VPC)之間經 Transit Gateway 的路由是否建立
+2. VPC 的分散式防火牆是否預設阻擋 VPC 間流量
+3. guest cluster VPC 是否真的掛在同一個 TGW 上(檢查其 connectivity profile)
+4. `supervisor.default.svc` 這個名稱由誰提供解析 —— 節點的 DNS 指向 10.0.0.200(AD),
+   但這是 Supervisor 內部的 service 名稱,應該要走 VPC 內的 DNS 或 /etc/hosts 注入
+
+**環境目前狀態**:MachineHealthCheck 已暫停(見 9.6),VM 不會再被重建,可以安心診斷。
