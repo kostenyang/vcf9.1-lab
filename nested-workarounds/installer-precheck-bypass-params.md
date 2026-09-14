@@ -136,3 +136,24 @@ Spring 對「多出來 / 未被消費的 property」也只是忽略。
   掃 `.class` 常數池的 `${...}` 與 dotted key，逐條比對是否命中、命中在哪顆 jar（= 哪個服務讀）。
 - appliance 進不去 SSH（22 refused）→ 一律走**外層 vCenter guest-ops**（VMware Tools）跑腳本；
   govc guest.run 有「多字 `bash -c` 被拆」的空格坑 → 把指令寫成 `.sh` 上傳再 `bash /tmp/x.sh` 才穩。
+
+---
+
+## 6. 1G NIC 主機（2026-09-14 實掃 inst02 9.1.0.0400 + SDDC Manager 9.1.1 實測）
+
+檢查訊息：`Host must have minimum two 10Gig NIC(s). Host does not have any 10G Speed NIC(s).`
+同一把 property，**兩個服務各自讀**，要放對檔案：
+
+| 場景 | 讀取 class | 放哪個檔 |
+|---|---|---|
+| Installer bring-up 主機驗證 | domainmanager `EsxiHostValidator`（libvalidation-plugin） | `/etc/vmware/vcf/domainmanager/application.properties` |
+| Day-N 建 VI WLD / 建叢集 / 加主機到叢集 | domainmanager `DomainValidator`、`ValidateClusterCreationSpecAction`、`ClusterController` | 同上（SDDC Manager 上） |
+| Day-N commission 進 free pool | operationsmanager `HostHardwareValidator`（libvcf-host-validators） | `/etc/vmware/vcf/operationsmanager/application.properties` |
+
+```properties
+enable.speed.of.physical.nics.validation=false
+```
+改完 `systemctl restart domainmanager`（或 `operationsmanager`）。
+✅ SDDC Manager 端已用 esx05（4×e1000e=1000Mb）實測：加到 operationsmanager 後 commission Successful。
+同 class 另有 `enable.vmknic.tags.validation`（vmk0 只准 Management tag）、`feature.vcf.VGL-29478.lag-and-single-pnic`。
+⚠ lab only；1G 上 vSAN/NSX overlay 實際跑不跑得動是另一回事。
