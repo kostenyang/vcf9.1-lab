@@ -146,6 +146,11 @@ govc object.collect -s /m01-dc01/network/<vds> summary.numHosts   # 必須是 0
 govc object.destroy /m01-dc01/network/<vds>
 ```
 
+> **對照組（2026-09-14 收尾拆 lab 時實測）**：同一個叢集在**成功建立之後**再走正常的
+> `markForDeletion` + `DELETE /v1/clusters/{id}`，**VDS 會被自動清乾淨**
+> （`govc find -l /<dc>/network -name 'vDS_*'` 無殘留），而且不需要 guardrail skip flag。
+> 👉 所以 **VDS 殘留只發生在「workflow 失敗、rollback 被撞名弄壞」的情況**，正常拆除不會留垃圾。
+
 ### Step 5 — 查 SDDC Manager DB 有沒有孤兒 vds row（KB 419626）
 
 ```bash
@@ -209,3 +214,41 @@ vDS_FuGuo-Test_vSAN   →   vDS_FuGuo-Test_MGMT-pg-vmotion
   → SDDC Manager 會報 `FAILED_TO_FETCH_NSX_VERSION`。關掉多餘的 nested host 即恢復。
 - **重啟 domainmanager 會把進行中的任務打成 `The task was interrupted`**（可 retry）。
   改 `application.properties` 後一定要 restart 才會被進行中的 FSM 讀到。
+
+---
+
+## 6. 測試環境的建立與拆除（2026-09-14 完整紀錄）
+
+為了做這個破壞測試臨時建的東西，以及事後如何完整還原。
+
+### 建立
+| 項目 | 內容 |
+|---|---|
+| esx06 / esx07 | 10.0.1.12 / 10.0.1.11，nested OVA → 升到 BOM 0200 → commission 到 `nfs-np01` |
+| network pool | `nfs-np01`（VMOTION vlan13 `192.168.13.20-25` + NFS vlan15 `192.168.15.20-25`）|
+| NFS datastore | `10.0.0.60:/nfs/vcftest`（在 vcd-nfs01 上**另開** export，沒動 VCD 的 `/nfs/vcd-transfer`）|
+| 測試叢集 | `m01-cl03`（NFS 兩節點；vSAN 需 3 台、外部儲存只需 2 台）|
+| TEP pool | `m01-cl01-tep01` 擴充 `192.168.19.61-80`（原本 50-60 只剩 1 個 IP）|
+
+### 拆除順序（順序有講究）
+```
+1. esx05 decommission → govc vm.destroy → 刪 DNS A/PTR
+2. m01-cl03: markForDeletion → DELETE          ← guardrail skip flag 必須「還留著」才不會被擋
+3. esx06/esx07 decommission → vm.destroy → 刪 DNS
+4. DELETE /v1/network-pools/{nfs-np01}
+5. 移除 NFS export /nfs/vcftest（sed 掉 /etc/exports 那行 + exportfs -ra）
+6. ★最後★ 才還原 skip flag + systemctl restart domainmanager operationsmanager
+```
+🔴 **第 2 步一定要排在第 6 步之前** —— 還原 flag 之後 Remove Cluster 會再次被
+`Cluster has 1 or more powered-on VMs` 那個 false positive 擋住。
+
+### 拆完的驗證
+```
+hosts    : esx01-04 ASSIGNED 9.1.0.0200.25557999      （回到原本 4 台）
+clusters : m01-cl01 ACTIVE hosts=4
+VDS      : 只剩 m01-cl01-vds01
+exports  : 只剩 /nfs/vcd-transfer
+flags    : domainmanager / operationsmanager 皆無殘留（備份 .bak-restore-*）
+```
+保留未還原（刻意）：NSX TEP pool `192.168.19.50-80`、`m01-np01` 的
+vSAN `192.168.14.5-10` / vMotion `192.168.13.10-15` 擴充範圍。
