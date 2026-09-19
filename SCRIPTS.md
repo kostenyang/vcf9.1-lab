@@ -98,6 +98,17 @@
 | `ESXi91-ISO-Upgrade-Steps.md` | Console 互動升級步驟 + CPU/HCL/TPM workaround 對照 (文件, 不可執行) | 參考文件 |
 | `Troubleshoot-VsanPartition.md` | vSAN cluster partition 完整除錯流程 (unicast peer list 空) | 參考文件 |
 
+### layer4-day2/stretch-cluster/ — mgmt cluster 轉 vSAN Stretched Cluster(SDDC Manager API,UI 沒有)
+
+| 腳本 | 功能 | 跑法 |
+|---|---|---|
+| `vcf_stretch.py` | SDDC Manager API CLI(純標準庫):hosts/clusters/pools、thumbprint、remove-host(compaction+decommission)、commission、gen-stretch-spec、stretch(validate→PATCH)、task/watch/retry | `SDDC_PASS=... python vcf_stretch.py stretch --cluster vcf-m01-cl01 --spec stretch-spec.json --watch` |
+| `vcf_stretch.sh` | 同上 shell 版 (bash+curl+jq),跳板機直接跑 | `./vcf_stretch.sh stretch vcf-m01-cl01 stretch-spec.json` |
+| `curl-cheatsheet.sh` | 一行一個 curl,複製貼上手打用 | 參考,逐行貼 |
+| `witness_prep.py` | witness 加進 vCenter(cluster 外)+ vSAN vmk(VLAN/IP/**MTU 9000**/vsan tag) (pyvmomi) | `python witness_prep.py --vc ... --dc vcf-m01-dc01 --witness esx-witness.alan.lab --vlan 140 --ip 192.168.140.68` |
+| `vsan_policy_sftt0.py` | stretch 後把 VCF 套的 PFTT=1/SFTT=1 改成 SFTT=0 並 reapply 到所有 VM(nested 容量不夠 4 份時) (pyvmomi) | `python vsan_policy_sftt0.py --vc ... --policy 'vcf-m01-cl01 vSAN Storage Policy' [--check]` |
+| `STRETCH-RUNBOOK.md` | 2026-09-18/19 實作紀錄:步驟 A~E、4 次 task 失敗真因(resync、witness MTU 1500 → vLCM HealthCheckFailed)、log 位置、checklist | 參考文件 |
+
 ---
 
 ## Inventory & Secrets
