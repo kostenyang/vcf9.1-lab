@@ -1,6 +1,7 @@
 # VCF 9.1 — 用 API 把 mgmt cluster 變 vSAN Stretched Cluster(3+3+witness)
 
-alan.lab 2026-09-18/19 實測。VCF 的 stretch **只有 API**(SDDC Manager UI 沒有),整套流程包成三支腳本:
+alan.lab 2026-09-18/19 實測。VCF 的 stretch **只有 API**(SDDC Manager UI 沒有),整套流程包成幾支腳本。
+**一頁版流程看 [`FLOW.md`](FLOW.md)**;完整實作紀錄與踩雷看 `STRETCH-RUNBOOK.md`。
 
 | 腳本 | 需要 | 做什麼 |
 |---|---|---|

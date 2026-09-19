@@ -107,6 +107,7 @@
 | `curl-cheatsheet.sh` | 一行一個 curl,複製貼上手打用 | 參考,逐行貼 |
 | `witness_prep.py` | witness 加進 vCenter(cluster 外)+ vSAN vmk(VLAN/IP/**MTU 9000**/vsan tag) (pyvmomi) | `python witness_prep.py --vc ... --dc vcf-m01-dc01 --witness esx-witness.alan.lab --vlan 140 --ip 192.168.140.68` |
 | `vsan_policy_sftt0.py` | stretch 後把 VCF 套的 PFTT=1/SFTT=1 改成 SFTT=0 並 reapply 到所有 VM(nested 容量不夠 4 份時) (pyvmomi) | `python vsan_policy_sftt0.py --vc ... --policy 'vcf-m01-cl01 vSAN Storage Policy' [--check]` |
+| `FLOW.md` | 一頁版流程 0→H(減一台 → commission → witness → stretch → SFTT=0 → retry → 驗證),每步對應命令與 API | 參考文件 |
 | `STRETCH-RUNBOOK.md` | 2026-09-18/19 實作紀錄:步驟 A~E、4 次 task 失敗真因(resync、witness MTU 1500 → vLCM HealthCheckFailed)、log 位置、checklist | 參考文件 |
 
 ---
