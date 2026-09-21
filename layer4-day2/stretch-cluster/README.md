@@ -1,4 +1,6 @@
-# VCF 9.1 — 用 API 把 mgmt cluster 變 vSAN Stretched Cluster(3+3+witness)
+# vcf-stretch-cluster — 用 SDDC Manager API 把 VCF 9.1 mgmt cluster 變 vSAN Stretched Cluster(3+3+witness)
+
+> 主要維護處是獨立 repo [kostenyang/vcf-stretch-cluster](https://github.com/kostenyang/vcf-stretch-cluster)(含 shots / shots-redo 截圖與 docx);這裡是同步副本(只有腳本與文件)。
 
 alan.lab 2026-09-18/19 實測。VCF 的 stretch **只有 API**(SDDC Manager UI 沒有),整套流程包成幾支腳本。
 **第一次做的人看 [`BEGINNER-GUIDE.md`](BEGINNER-GUIDE.md)(逐步、含預期輸出與出錯處理);一頁版流程看 [`FLOW.md`](FLOW.md)**;完整實作紀錄與踩雷看 `STRETCH-RUNBOOK.md`。

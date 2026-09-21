@@ -108,7 +108,7 @@ PATCH /v1/clusters/{clusterId}               → task「Stretch vSAN Cluster - v
 | 3 | 同上(resync=0 後 retry) | vSAN Skyline Health red:largeping(witness vmk1 MTU 1500) | witness vSwitch0/vmk1 MTU 9000 |
 | 4 | — | — | **Successful** |
 
-## 截圖(shots/stretch/)
+## 截圖(shots/)
 | 檔名 | 內容 |
 |---|---|
 | 01-sddcm-hosts-3plus3.png | SDDC Manager Hosts:esx01-03 Active、esx05-07 Error(第 1 次 remediate 失敗後) |
@@ -126,3 +126,78 @@ PATCH /v1/clusters/{clusterId}               → task「Stretch vSAN Cluster - v
 3. stretch 前先算容量:VCF 會套 PFTT=1/SFTT=1(4 份)。裝不下就 stretch 完立刻把 policy 改 SFTT=0 並 reapply。
 4. Remediate 掛 `HealthCheckFailed` → 看 vCenter vum-server.log 的 `[vSAN] ... returned status` 與 `Overall vSAN cluster health`,
    再看 `vmware-vsan-health-summary-result.log` 哪一項 red。resync 沒歸零、health 沒綠,retry 必敗。
+
+---
+
+# Round 2:整輪重做(2026-09-20,為了 step-by-step 截圖 + 驗證腳本)
+
+流程:**unstretch → decommission AZ2 → 移除 witness → commission → witness_prep → stretch → SFTT=0 → 驗證**。
+截圖在 `shots-redo/`(每個階段一組:SDDC Manager Tasks / Hosts / Unassigned + vCenter Fault Domains / Hosts / witness vmk / resync / health)。
+
+## 時間軸
+| 時間 | 事件 |
+|---|---|
+| 11:33–11:54 | `unstretch --watch`:57/57 Successful(20 分)。cluster 回 3 台,esx05-07 → `UNASSIGNED_UNUSEABLE` |
+| 12:00 | `DELETE /v1/hosts` esx05-07 decommission(1 分);witness 從 vCenter Disconnect + Destroy |
+| 12:05–13:20 | **AZ2 主機清到能 commission**(見下,花最久) |
+| 13:23 | commission 三台:validate SUCCEEDED → 2 分完成 → `UNASSIGNED_USEABLE` |
+| 13:30 | `witness_prep.py`:加 standalone host、vSwitch0 MTU 9000、vmk1 140.68/9000、vsan tag;jumbo ping 140.5-7 全通 |
+| 13:35 | `gen-stretch-spec` → `stretch --validate-only` SUCCEEDED → `stretch --watch`(task `e783affa`) |
+| 14:02 | **Failed 67/114**:`Migrate ESX Host Management vmknic(s) to vSphere Distributed Switch` esx07 — `VSPHERE_CONFIGURE_HOST_DVS_FAILED / An error occurred while communicating with the remote host` |
+| 14:32 | retry #1 又掛 esx07 同一步(清外層 vNIC 學習表沒用) |
+| 14:59 | retry #2:esx07 過了,**esx05** 掛同一步 → 確認根因是 vmk0 MAC(下) |
+| 15:13 | retry #3(esx05/06 vmk0 換獨立 MAC):**Successful 110/110**。Remediate 一次過 |
+| 15:15 | policy PFTT=1/SFTT=1 → SFTT=0 + reapply;resync 343GB |
+
+## 新踩的雷(都跟「unstretch 後重新 commission」有關)
+
+### 1. unstretch 把 AZ2 主機留在什麼狀態
+- 踢出 vCenter,但 **maintenance mode 沒退**
+- **vmk0 留在孤兒 DVS proxy 上**(`vcf-m01-cl01-vds01` 還在主機的 net-dvs 設定裡)、vSwitch0 已被刪
+- SSH 服務關、**firewall ruleset `sshServer` 也關**(每次跑 commission validation 還會再關一次)
+- vSAN 磁碟 partition 還在
+
+而 `POST /v1/hosts/validations` 一條一條擋(每修一項才告訴你下一項):
+`ESXi host is in maintenance mode` → `Host does not contain vSphere Standard Switch - vSwitch0` →
+`vSwitch0 must have only one NIC as Uplink` → `vSAN Partition found on the host` →
+`Distributed Switch(es) found on the Host` → `Host MUST have only one Standard Switch`。
+
+### 2. 怎麼在主機斷網時修它:外層 vCenter 的 Guest Operations
+William Lam 的 nested ESXi 有 VMware Tools → 從外層 vCenter(110.32)用 `guestOperationsManager` 把 shell script 丟進去跑,**不需要網路**:
+`tools-guest_fix.py <外層 VM 名> <script.sh>`(repo 內,密碼用環境變數 OUTER_VC_PASS / NESTED_ROOT_PASS)(InitiateFileTransferToGuest + StartProgramInGuest + 抓 /tmp 輸出)。
+限制:guest-ops 是沙箱,`esxcli` 可以,`net-dvs` / `esxcfg-vswitch -Q` / `vsish` / `/sbin/auto-backup.sh` 會 `Operation not permitted` → 這些要用 SSH。
+
+### 3. 最終清法(每台)
+```
+# guest-ops(斷網也能跑)
+esxcli network vswitch standard add -v vSwitch0
+esxcli network vswitch standard portgroup add -p "Management Network" -v vSwitch0      # VLAN 0(lab 管理網是 untagged;誤設 120 會斷)
+esxcli network vswitch standard uplink add -u vmnicX -v vSwitch0
+esxcli network vswitch standard policy failover set -v vSwitch0 -a vmnicX              # ← uplink add 只會放到 Unused,一定要 set active
+esxcli network ip interface remove -i vmk0 ; esxcli network ip interface add -i vmk0 -p "Management Network"   # 不帶 -M,拿新 MAC
+esxcli network ip interface ipv4 set -i vmk0 -t static -I <ip> -N 255.255.255.0 ; esxcli network ip route ipv4 add -n default -g 192.168.120.1
+# SSH(通了之後;先用 API 開 TSM-SSH + firewall sshServer)
+esxcfg-vswitch -Q vmnic0 -V <dvport> vcf-m01-cl01-vds01 ; net-dvs -d vcf-m01-cl01-vds01
+esxcli network vswitch standard remove -v DvsPortset-0      # 殭屍 portset,重開也不會消失,要手動 remove
+esxcli vsan cluster leave ; esxcli vsan storage remove -d/-s <disk>
+/etc/init.d/hostd restart                                   # hostd 還會快取 DVS
+# 最後 vSwitch0 只留 vmnic0 一張 uplink(VCF 要求)
+```
+(用 API `UpdateNetworkConfig` 一次做會 `InvalidArgument`;分步用 API 做又會把 DVS kernel 狀態弄壞 → 上面這套最穩。)
+
+### 4. vmk0 的 MAC 不能等於 vmnic0 的 MAC(外層 vDS MAC learning)
+外層 trunk portgroup `VCF91-Nested-Trunk`:**MAC learning 開、forged transmits 允許、promiscuous 關**。
+MAC learning 不會把「已指派給某個 port 的 vNIC MAC」學到別的 port。
+我修復時把 vmk0 的 MAC 設成 vmnic0 的 MAC → VCF 把 vmk0 搬到 VDS 後 hash 到 uplink2(vmnic1)送出 → 外層丟包 →
+`Migrate ESX Host Management vmknic(s) to vSphere Distributed Switch` 失敗「communicating with the remote host」,而且哪台掛看 hash 運氣(esx07 兩次、esx05 一次)。
+**vmk0 要用獨立 MAC**(`esxcli network ip interface add` 不帶 `-M` 就會給 00:50:56:6x 的新 MAC;原廠 OVA 的 vmk0 也是合成 MAC)。
+同理:vSwitch0 只有 vmnic1 而 vmk0 用 vmnic0 的 MAC 也不通。
+
+### 5. 腳本修正
+- `validation_wait`:**cluster 的 `/validations` 是同步**(POST 直接回 COMPLETED,GET `/validations/{id}` 回 400);hosts 的才是非同步。舊版會永遠等 → 已改成兩種都吃。
+- 新增 `unstretch --cluster X [--validate-only] [--watch]`(`clusterUnstretchSpec`)。
+- `stretch` 現在會把 task id 寫到 `stretch-task.txt`(retry 用)。
+
+## 這輪比上輪好的地方
+- witness 一開始就 MTU 9000 → **Remediate 一次過**,沒再撞 vSAN health red。
+- policy 在「Update vSAN Storage Profile」剛過時就改 SFTT=0 → resync 343GB(上輪 535GB)。

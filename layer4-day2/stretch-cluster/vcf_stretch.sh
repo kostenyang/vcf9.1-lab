@@ -48,16 +48,16 @@ log()   { echo "[$(date +%H:%M:%S)] $*"; }
 cluster_id() { api GET /v1/clusters | jq -r --arg n "$1" '.elements[] | select(.name==$n) | .id'; }
 host_id()    { api GET /v1/hosts    | jq -r --arg n "$1" '.elements[] | select(.fqdn==$n) | .id'; }
 
-# ---- 驗證是非同步:POST 拿 id → GET 到 COMPLETED ----
+# ---- 驗證:hosts 的是非同步(POST 拿 id → GET 到 COMPLETED);clusters 的是同步(POST 直接回 COMPLETED)----
 validate() {   # validate <validations-path> <spec.json>
   local path="$1" spec="$2" vid v r
   r="$(api POST "$path" -d @"$spec")"
   vid="$(echo "$r" | jget '.id')"
   [[ -n "$vid" && "$vid" != "null" ]] || { echo "validation request rejected:"; echo "$r" | (jq . 2>/dev/null || cat); return 1; }
-  while :; do
-    v="$(api GET "$path/$vid")"
-    [[ "$(echo "$v" | jget '.executionStatus')" == "COMPLETED" ]] && break
+  v="$r"
+  while [[ "$(echo "$v" | jget '.executionStatus')" != "COMPLETED" ]]; do
     sleep 10
+    v="$(api GET "$path/$vid")"
   done
   echo "validation: $(echo "$v" | jget '.resultStatus')"
   echo "$v" | jq -r '.validationChecks[]? | select(.resultStatus!="SUCCEEDED") | "  \(.resultStatus) \(.description) | \(.errorResponse.message // "")"'

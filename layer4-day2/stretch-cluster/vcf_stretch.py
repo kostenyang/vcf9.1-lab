@@ -18,6 +18,7 @@ vcf_stretch.py — 用 SDDC Manager API 把 VCF 9.x 的 vSAN cluster 變成 stre
                      --witness-ip IP --witness-cidr CIDR [--overlay-vlan 150] [-o stretch-spec.json]
                                   自動填 host id + VDS/uplink 對應,產生 stretch spec
     stretch       --cluster NAME --spec stretch-spec.json [--validate-only] [--watch]
+    unstretch     --cluster NAME [--validate-only] [--watch]     拆回一般 cluster(重做 / 回退用)
     task <id> / watch <id> / retry <id>
 
 例:
@@ -106,13 +107,20 @@ def watch_task(tid, interval=60):
         time.sleep(interval)
 
 
-def validation_wait(path_get, vid, interval=10):
-    """驗證是非同步的:POST 拿到 id 後要 GET 到 executionStatus=COMPLETED。"""
-    while True:
-        st, v = api(f"{path_get}/{vid}")
-        if v.get("executionStatus") == "COMPLETED":
-            return v
-        time.sleep(interval)
+def validation_wait(path_get, resp, interval=10, max_wait=1800):
+    """hosts 的 validations 是非同步(POST 回 id → GET 到 COMPLETED);
+    clusters 的 validations 是同步(POST 直接回 COMPLETED,之後 GET /{id} 會 400)。兩種都吃。"""
+    v = resp
+    waited = 0
+    while v.get("executionStatus") != "COMPLETED":
+        if waited >= max_wait:
+            sys.exit(f"validation 超過 {max_wait}s 未完成: {json.dumps(v, ensure_ascii=False)[:300]}")
+        time.sleep(interval); waited += interval
+        st, v2 = api(f"{path_get}/{v['id']}")
+        if st >= 400:
+            sys.exit(f"GET {path_get}/{v['id']} -> {st} {json.dumps(v2, ensure_ascii=False)[:300]}")
+        v = v2
+    return v
 
 
 def print_validation(v):
@@ -202,7 +210,7 @@ def cmd_remove_host(a):
     st, r = api(f"/v1/clusters/{cl['id']}/validations", "POST", spec)
     if st not in (200, 202):
         pj(r); sys.exit(1)
-    v = validation_wait(f"/v1/clusters/{cl['id']}/validations", r["id"])
+    v = validation_wait(f"/v1/clusters/{cl['id']}/validations", r)
     print_validation(v)
     if v.get("resultStatus") != "SUCCEEDED":
         sys.exit(1)
@@ -229,7 +237,7 @@ def cmd_commission(a):
     st, r = api("/v1/hosts/validations", "POST", spec)
     if st not in (200, 202):
         pj(r); sys.exit(1)
-    v = validation_wait("/v1/hosts/validations", r["id"])
+    v = validation_wait("/v1/hosts/validations", r)
     print_validation(v)
     if v.get("resultStatus") != "SUCCEEDED" or a.validate_only:
         return
@@ -275,12 +283,32 @@ def cmd_stretch(a):
     st, r = api(f"/v1/clusters/{cl['id']}/validations", "POST", spec)
     if st not in (200, 202):
         pj(r); sys.exit(1)
-    v = validation_wait(f"/v1/clusters/{cl['id']}/validations", r["id"])
+    v = validation_wait(f"/v1/clusters/{cl['id']}/validations", r)
     print_validation(v)
     if v.get("resultStatus") != "SUCCEEDED" or a.validate_only:
         return
     st, r = api(f"/v1/clusters/{cl['id']}", "PATCH", spec)
     print("PATCH stretch ->", st, r.get("name") or r, "task", r.get("id"))
+    if r.get("id"):
+        open("stretch-task.txt", "w").write(r["id"])
+    if a.watch and r.get("id"):
+        watch_task(r["id"])
+
+
+def cmd_unstretch(a):
+    """POST /v1/clusters/{id}/validations → PATCH /v1/clusters/{id}(clusterUnstretchSpec):拆回一般 cluster,
+    AZ2 主機退回 UNASSIGNED_USEABLE、witness 解除。"""
+    cl = find_cluster(a.cluster)
+    spec = {"clusterUnstretchSpec": {}}
+    st, r = api(f"/v1/clusters/{cl['id']}/validations", "POST", spec)
+    if st not in (200, 202):
+        pj(r); sys.exit(1)
+    v = validation_wait(f"/v1/clusters/{cl['id']}/validations", r)
+    print_validation(v)
+    if v.get("resultStatus") != "SUCCEEDED" or a.validate_only:
+        return
+    st, r = api(f"/v1/clusters/{cl['id']}", "PATCH", spec)
+    print("PATCH unstretch ->", st, r.get("name") or r, "task", r.get("id"))
     if a.watch and r.get("id"):
         watch_task(r["id"])
 
@@ -331,6 +359,8 @@ def main():
     x.set_defaults(f=cmd_gen_stretch_spec)
     x = sp.add_parser("stretch"); x.add_argument("--cluster", required=True); x.add_argument("--spec", required=True)
     x.add_argument("--validate-only", action="store_true"); x.add_argument("--watch", action="store_true"); x.set_defaults(f=cmd_stretch)
+    x = sp.add_parser("unstretch"); x.add_argument("--cluster", required=True)
+    x.add_argument("--validate-only", action="store_true"); x.add_argument("--watch", action="store_true"); x.set_defaults(f=cmd_unstretch)
     x = sp.add_parser("task"); x.add_argument("id"); x.set_defaults(f=cmd_task)
     x = sp.add_parser("watch"); x.add_argument("id"); x.set_defaults(f=cmd_watch)
     x = sp.add_parser("retry"); x.add_argument("id"); x.set_defaults(f=cmd_retry)
